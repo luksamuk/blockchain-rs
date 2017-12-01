@@ -6,7 +6,7 @@ Blockchain implementation on Rust
 This is my first attempt at implementing a very basic blockchain in Rust. It uses simple vectors to store transactions in blocks, serializes to JSON, and uses a very simple algorithm which reminds a little of Bitcoin's hashcash, with SHA256 hashing.
 Next features to be added are a functioning REPL for testing the blockchain itself, dumping it to a text file, then recovering it; I also plan to add a way to make transactions over a network, but that might require a lot more study from me.
 
-Please mind that I'm not actually paying attention to the actual currency, only to the blockchain data structure and how it works.
+Please mind that I'm not actually paying attention to the actual currency, only to the blockchain data structure and how it works, while I also take the chance to learn and try to code something in Rust.
 
 This blockchain implementation is largely based on [this article from website HackerNoon](https://hackernoon.com/learn-blockchains-by-building-one-117428612f46), however, I've rewritten it in Rust in the way I could. Plus, since I couldn't rely on Flask, I tried to take the multithreaded approach with a CLI interface of sorts (currently WIP).
 
