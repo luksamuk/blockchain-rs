@@ -8,7 +8,7 @@ Next features to be added are a functioning REPL for testing the blockchain itse
 
 Please mind that I'm not actually paying attention to the actual currency, only to the blockchain data structure and how it works.
 
-This blockchain implementation is largely based on [this article from website HackerNoon](https://hackernoon.com/learn-blockchains-by-building-one-117428612f46), however, I've rewritten it in Rust were I could. Plus, since I couldn't rely on Flask, I tried to take the multithreaded approach with a CLI interface of sorts (currently WIP).
+This blockchain implementation is largely based on [this article from website HackerNoon](https://hackernoon.com/learn-blockchains-by-building-one-117428612f46), however, I've rewritten it in Rust in the way I could. Plus, since I couldn't rely on Flask, I tried to take the multithreaded approach with a CLI interface of sorts (currently WIP).
 
 ## Compile
 Since this is a Rust program, you'll find no difficulty building it if you have Cargo installed.
