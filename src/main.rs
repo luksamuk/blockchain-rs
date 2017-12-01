@@ -50,7 +50,7 @@ impl Blockchain {
         };
         // Create genesis block
         blockchain.new_block(100, Some(String::from("1")));
-        blockchain.clone()
+        blockchain
     }
 
     // Creates a new block in the blockchain
@@ -72,7 +72,7 @@ impl Blockchain {
         self.chain.push(block.clone());
         println!("Created block {} with previous_hash {}", block.index, block.previous_hash);
         println!("Current hash: {}", Blockchain::hash(&block));
-        self.chain.last().unwrap()
+        self.chain.last().unwrap() // We already pushed a block, so it's ok to unwrap here
     }
 
     // Creates a new transaction to go into the next mined block.
@@ -155,15 +155,17 @@ impl Blockchain {
 
 // Signal sending enum
 enum ReplCommand {
-    Transaction {from: String, to: String, amount: u64 },
+    Transaction { from: String, to: String, amount: u64 },
     Mine,
-    Save,
+    Save { filename: String },
     Print,
     Quit,
 }
 
 // Signal receiving enum
-
+enum DaemonResponse {
+    
+}
 
 // REPL implementation
 
@@ -175,8 +177,8 @@ enum ReplCommand {
 // message system of sorts...
 fn main() {
     // Communication channels
-    let (tx, rx) = mpsc::channel();
-
+    let (tx, rx) = mpsc::channel(); // REPL to Daemon
+    let (ty, ry) = mpsc::channel(); // Daemon to REPL
 
     // Daemon
     let daemon = thread::spawn(move || {
@@ -188,20 +190,26 @@ fn main() {
         println!("Daemon: Created blockchain");
 
         loop {
-            match rx.recv().unwrap() {
+            match rx.recv().unwrap() { // TODO: Workaround for this unwrap
                 ReplCommand::Quit => {
+                    ty.send(Ok("DAEMON QUIT"));
                     break
                 },
                 ReplCommand::Print => {
                     println!("Daemon: Dumping blockchain to console...");
                     println!("Daemon: {}", serde_json::to_string(&blockchain).unwrap());
                     println!("Daemon: Done.");
+                    ty.send(Ok("DAEMON PRINT"));
                 },
                 ReplCommand::Transaction { from, to, amount } => {
                     println!("Daemon: Sending ${} from {} to {}...", amount, from, to);
                     println!("Daemon: Not yet implemented");
+                    ty.send(Err("DAEMON NOT IMPLEMENTED"));
                 },
-                _ => println!("Daemon: Not yet implemented"),
+                _ => {
+                    println!("Daemon: Not yet implemented");
+                    ty.send(Err("DAEMON NOT IMPLEMENTED"));
+                },
             };
         };
 
@@ -210,17 +218,20 @@ fn main() {
 
 
     // REPL
+    // TODO. For now, we're just printing and testing stuff.
     tx.send(ReplCommand::Print);
     tx.send(ReplCommand::Transaction { from:   "SENDER".to_owned(),
                                        to:     "RECIPIENT".to_owned(),
                                        amount: 100 });
     tx.send(ReplCommand::Quit);
+
+    // Also, use ry to receive Daemon feedback.
     
 
     /*println!("First proof of work: {}",
              blockchain.proof_of_work(blockchain
                                       .chain
-                                      .last().unwrap()
+                                      .last().unwrap() // ok to unwrap here, I have at least the genesis block
                                       .proof));*/
     daemon.join();
 }
