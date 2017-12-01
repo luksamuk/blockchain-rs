@@ -210,6 +210,7 @@ enum DaemonResponse {
 
 // Stopped at Our Blockchain as an API. I'll have to create a repl and a
 // message system of sorts...
+// The consensus is also missing! We need to implement the consensus.
 fn main() {
     // Communication channels
     let (tx, rx) = mpsc::channel(); // REPL to Daemon
