@@ -3,16 +3,18 @@
 
 #[macro_use]
 extern crate serde_derive;
-
 extern crate serde;
 extern crate serde_json;
 extern crate time;
 extern crate crypto;
+extern crate uuid;
 
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use std::thread;
 use std::sync::mpsc;
+use uuid::Uuid;
+use std::time::{Duration, SystemTime};
 
 
 #[derive(Serialize, Deserialize, Clone, Hash)]
@@ -70,8 +72,7 @@ impl Blockchain {
         };
         self.current_transactions.clear();
         self.chain.push(block.clone());
-        println!("Created block {} with previous_hash {}", block.index, block.previous_hash);
-        println!("Current hash: {}", Blockchain::hash(&block));
+        println!("Created block {} with hash {}", block.index, Blockchain::hash(&block));
         self.chain.last().unwrap() // We already pushed a block, so it's ok to unwrap here
     }
 
@@ -99,7 +100,7 @@ impl Blockchain {
         // Correct this:
         // 1. Serialize block to JSON
         let json = serde_json::to_string(&block).unwrap();
-        println!("JSON Block: {}", json);
+        //println!("JSON Block: {}", json);
         // 2. Transform string into [u8]
         let json_b = json.into_bytes();
         // 3. Hash [u8] using crate sha2 https://crates.io/crates/sha2
@@ -128,14 +129,48 @@ impl Blockchain {
     fn valid_proof(last_proof: u64, proof: u64) -> bool {
         // I need to check if this is correct later!
         let mut hasher = Sha256::new();
-        let guess = (last_proof * proof).to_string();
+        //let guess = (last_proof * proof).to_string(); // CHANGE THIS TO A STRING "last_proofproof"!!!!!
+        let guess = last_proof.to_string() + proof.to_string().as_ref();
         hasher.input(&guess.into_bytes());
         let result = hasher.result_str();
         //println!("Hasher result string: {}", result);
         // Now check if first four characters are zeroes
         &result[..4] == "0000"
     }
+
+    fn mine_block(&mut self, identifier: String) {
+        let last_block = self.chain.last().unwrap().clone();
+        let last_proof = last_block.proof;
+
+        // Mine
+        let proof = self.proof_of_work(last_proof);
+
+        // Reward
+        self.new_transaction("0".to_owned(), identifier, 1);
+
+        // Forge the new block
+        let previous_hash = Blockchain::hash(&last_block);
+        let block = self.new_block(proof, Some(previous_hash));
+    }
 }
+
+
+// ---
+#[derive(Serialize, Deserialize)]
+struct Node {
+    identifier: String,
+}
+
+impl Node {
+    fn new() -> Node {
+        Node {
+            identifier: str::replace(Uuid::new_v4().to_string().as_ref(), "-", ""),
+            //balance: 0,
+        }
+    }
+}
+
+
 
 // ------------------------
 // The original tutorial used Flask with a web interface for the operations.
@@ -156,7 +191,7 @@ impl Blockchain {
 // Signal sending enum
 enum ReplCommand {
     Transaction { from: String, to: String, amount: u64 },
-    Mine,
+    Mine { miner: String },
     Save { filename: String },
     Print,
     Quit,
@@ -180,6 +215,15 @@ fn main() {
     let (tx, rx) = mpsc::channel(); // REPL to Daemon
     let (ty, ry) = mpsc::channel(); // Daemon to REPL
 
+    // Our node
+    let node = Node::new();
+
+    // Another node, just for testing
+    let friend = Node::new();
+
+    println!("Created a new node with identifier {}. This is me.", node.identifier);
+    println!("Created a new node with identifier {}. This is a friend.", friend.identifier);
+
     // Daemon
     let daemon = thread::spawn(move || {
         println!("Daemon: start");
@@ -197,14 +241,26 @@ fn main() {
                 },
                 ReplCommand::Print => {
                     println!("Daemon: Dumping blockchain to console...");
-                    println!("Daemon: {}", serde_json::to_string(&blockchain).unwrap());
+                    println!("Daemon: {}", serde_json::to_string_pretty(&blockchain).unwrap());
                     println!("Daemon: Done.");
                     ty.send(Ok("DAEMON PRINT"));
                 },
                 ReplCommand::Transaction { from, to, amount } => {
                     println!("Daemon: Sending ${} from {} to {}...", amount, from, to);
-                    println!("Daemon: Not yet implemented");
-                    ty.send(Err("DAEMON NOT IMPLEMENTED"));
+                    //println!("Daemon: Not yet implemented");
+                    blockchain.new_transaction(from.clone(), to.clone(), amount);
+                    //ty.send(Err("DAEMON NOT IMPLEMENTED"));
+                    ty.send(Ok("TRANSACTION COMPLETED")); // TODO: Validate from balance?
+                },
+                ReplCommand::Mine { miner } => {
+                    println!("Daemon: Mining a new block...");
+                    let now = SystemTime::now();
+                    blockchain.mine_block(miner.clone());
+                    match now.elapsed() {
+                        Ok(elapsed) => println!("Daemon: Finished block mining in {} seconds.", elapsed.as_secs()),
+                        Err(_) => {}
+                    };
+                    println!("Daemon: Block mined, $1 rewarded to {}", miner);
                 },
                 _ => {
                     println!("Daemon: Not yet implemented");
@@ -219,19 +275,44 @@ fn main() {
 
     // REPL
     // TODO. For now, we're just printing and testing stuff.
+
+    tx.send(ReplCommand::Mine { miner: node.identifier.clone() }); // Mine the first block
+
+    // Send a coin to a friend
+    tx.send(ReplCommand::Transaction { from:   node.identifier.clone(),
+                                       to:     friend.identifier.clone(),
+                                       amount: 1 });
+    
+    // We mine some more blocks
+    for _ in 0..7 {
+        tx.send(ReplCommand::Mine { miner: node.identifier.clone() });
+    }
+    
+    // Send one more coin to a friend
+    tx.send(ReplCommand::Transaction { from:   node.identifier.clone(),
+                                       to:     friend.identifier.clone(),
+                                       amount: 1 });
+
     tx.send(ReplCommand::Print);
-    tx.send(ReplCommand::Transaction { from:   "SENDER".to_owned(),
-                                       to:     "RECIPIENT".to_owned(),
-                                       amount: 100 });
+    
     tx.send(ReplCommand::Quit);
 
     // Also, use ry to receive Daemon feedback.
     
-
-    /*println!("First proof of work: {}",
-             blockchain.proof_of_work(blockchain
-                                      .chain
-                                      .last().unwrap() // ok to unwrap here, I have at least the genesis block
-                                      .proof));*/
     daemon.join();
 }
+
+
+// ------------------------
+
+// Tests
+#[test]
+fn proof_of_work_test() {
+    let mut blockchain = Blockchain::new();
+    println!("First proof of work: {}",
+             blockchain.proof_of_work(blockchain
+                                      .chain
+                                      .last().unwrap()
+                                      .proof));
+}
+
