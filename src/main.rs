@@ -308,7 +308,7 @@ fn main() {
 
 // Tests
 #[test]
-fn proof_of_work_test() {
+fn proof_of_work() {
     let mut blockchain = Blockchain::new();
     println!("First proof of work: {}",
              blockchain.proof_of_work(blockchain
@@ -317,3 +317,42 @@ fn proof_of_work_test() {
                                       .proof));
 }
 
+#[test]
+fn serialize_deserialize() {
+    // Create the blockchain, mine a few blocks, make some
+    // transactions, save them by mining one more block
+    let mut blockchain = Blockchain::new();
+    let node   = Node::new();
+    let friend = Node::new();
+
+    // TODO: I might need to register the nodes here soon
+    
+    for _ in 0..3 {
+        blockchain.mine_block(node.identifier.clone());
+    }
+    blockchain.new_transaction(node.identifier.clone(),
+                               friend.identifier.clone(),
+                               1);
+    blockchain.new_transaction(node.identifier.clone(),
+                               friend.identifier.clone(),
+                               2);
+    blockchain.new_transaction(friend.identifier.clone(),
+                               node.identifier.clone(),
+                               1);
+    blockchain.mine_block(node.identifier.clone());
+
+    // Serialize to string, then reverse it, then serialize
+    // the deserialized
+    let serialized = serde_json::to_string_pretty(&blockchain)
+        .expect("Error while serializing blockchain");
+    let deserialized: Blockchain = serde_json::from_str(&serialized)
+        .expect("Error while deserializing blockchain");
+    let reserialized = serde_json::to_string_pretty(&deserialized)
+        .expect("Error while serializing the new blockchain");
+
+    // Test passes if serialization is equal for both
+    println!("First serialization: {}", serialized);
+    println!("Second serialization: {}", reserialized);
+    
+    assert_eq!(serialized, reserialized);
+}
