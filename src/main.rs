@@ -1,6 +1,7 @@
 // This code is largely inspired on article:
 // https://hackernoon.com/learn-blockchains-by-building-one-117428612f46
 
+// Blockchain crates and uses
 #[macro_use]
 extern crate serde_derive;
 extern crate serde;
@@ -15,6 +16,16 @@ use std::thread;
 use std::sync::mpsc;
 use uuid::Uuid;
 use std::time::{Duration, SystemTime};
+
+
+// REPL crates and uses
+extern crate rustyline;
+
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
+
+
+// ----
 
 
 #[derive(Serialize, Deserialize, Clone, Hash)]
@@ -72,7 +83,7 @@ impl Blockchain {
         };
         self.current_transactions.clear();
         self.chain.push(block.clone());
-        println!("Created block {} with hash {}", block.index, Blockchain::hash(&block));
+        //println!("Created block {} with hash {}", block.index, Blockchain::hash(&block));
         self.chain.last().unwrap() // We already pushed a block, so it's ok to unwrap here
     }
 
@@ -129,7 +140,6 @@ impl Blockchain {
     fn valid_proof(last_proof: u64, proof: u64) -> bool {
         // I need to check if this is correct later!
         let mut hasher = Sha256::new();
-        //let guess = (last_proof * proof).to_string(); // CHANGE THIS TO A STRING "last_proofproof"!!!!!
         let guess = last_proof.to_string() + proof.to_string().as_ref();
         hasher.input(&guess.into_bytes());
         let result = hasher.result_str();
@@ -138,6 +148,8 @@ impl Blockchain {
         &result[..4] == "0000"
     }
 
+    // Mines a new block and appends it to the chain.
+    // identifier: Identifier for whoever is mining. Will receive a reward.
     fn mine_block(&mut self, identifier: String) {
         let last_block = self.chain.last().unwrap().clone();
         let last_proof = last_block.proof;
@@ -150,7 +162,7 @@ impl Blockchain {
 
         // Forge the new block
         let previous_hash = Blockchain::hash(&last_block);
-        let block = self.new_block(proof, Some(previous_hash));
+        self.new_block(proof, Some(previous_hash));
     }
 }
 
@@ -194,6 +206,7 @@ enum ReplCommand {
     Mine { miner: String },
     Save { filename: String },
     Print,
+    Dump,
     Quit,
 }
 
@@ -275,7 +288,39 @@ fn main() {
 
 
     // REPL
-    // TODO. For now, we're just printing and testing stuff.
+    // Editor
+    let mut rl = Editor::<()>::new();
+
+    // Load REPL history
+    /*if let Err(_) = rl.load_history("history.txt") {
+        println!("No previous history.");
+    }*/
+    
+    loop {
+        let readline = rl.readline("USER > ");
+        match readline {
+            Ok(line) => {
+                //rl.add_history_entry(&line);
+                println!("Input: {}", line);
+                // TODO: Parse command here
+            },
+            Err(ReadlineError::Interrupted) => {
+                println!("C-c");
+                break
+            },
+            Err(ReadlineError::Eof) => {
+                println!("C-d");
+                break
+            },
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break
+            }
+        }
+    }
+    //rl.save_history("history.txt").unwrap();
+
+    
 
     tx.send(ReplCommand::Mine { miner: node.identifier.clone() }); // Mine the first block
 
