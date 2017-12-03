@@ -15,7 +15,9 @@ use crypto::sha2::Sha256;
 use std::thread;
 use std::sync::mpsc;
 use uuid::Uuid;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
+use std::fs::File;
+use std::io::prelude::*;
 
 
 // REPL crates and uses
@@ -23,6 +25,7 @@ extern crate rustyline;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
+use std::collections::HashMap;
 
 
 // ----
@@ -64,6 +67,51 @@ impl Blockchain {
         // Create genesis block
         blockchain.new_block(100, Some(String::from("1")));
         blockchain
+    }
+
+    // Load blockchain from file
+    fn from_file(filename: String) -> Blockchain {
+        let mut f = File::open(filename);
+        match f {
+            Err(_) => {
+                println!("Cannot read blockchain file. Creating a new one.");
+                Blockchain::new()
+            },
+            Ok(mut f) => {
+                let mut text = String::new();
+                match f.read_to_string(&mut text) {
+                    Ok(_) => Blockchain::from_str(&text),
+                    Err(_) => {
+                        println!("Cannor read blockchain file text. Creating a new one.");
+                        Blockchain::new()
+                    }
+                }
+            }
+        }
+    }
+
+    // Load blockchain from string
+    fn from_str(string: &String) -> Blockchain {
+        let deserialized = serde_json::from_str(string);
+        match deserialized {
+            Ok(blockchain) => blockchain,
+            Err(_)         => {
+                println!("Cannot parse blockchain. Creating a new one.");
+                Blockchain::new()
+            }
+        }
+    }
+
+    // Saves blockchain to file
+    fn to_file(&self, filename: String) {
+        let serialized = serde_json::to_string_pretty(&self)
+            .expect("Unable to serialize blockchain!"); // TODO: There must be a way not to lose the chain here...
+        let mut f = File::create(filename);
+        match f {
+            Err(_) => println!("Unable to create file!"),
+            Ok(mut f) => f.write_all(serialized.as_bytes())
+                .expect("Unable to write blockchain to file!"),
+        };
     }
 
     // Creates a new block in the blockchain
@@ -161,8 +209,12 @@ impl Blockchain {
         self.new_transaction("0".to_owned(), identifier, 1);
 
         // Forge the new block
-        let previous_hash = Blockchain::hash(&last_block);
-        self.new_block(proof, Some(previous_hash));
+        //let previous_hash = Blockchain::hash(&last_block);
+        //self.new_block(proof, Some(previous_hash));
+        self.new_block(proof, None);
+    }
+
+    fn register_node(&mut self) {
     }
 }
 
@@ -202,11 +254,14 @@ impl Node {
 
 // Signal sending enum
 enum ReplCommand {
+    Help,
     Transaction { from: String, to: String, amount: u64 },
     Mine { miner: String },
     Save { filename: String },
     Print,
     Dump,
+    NewNode,
+    Alias { alias: String, identifier: String },
     Quit,
 }
 
@@ -216,7 +271,27 @@ enum DaemonResponse {
 }
 
 // REPL implementation
-
+// Commands:
+// - help:
+//   Shows help.
+// - mine ALIAS/IDENTIFIER: ✓
+//   Mines a new block.
+// - save FILENAME:
+//   Saves blockchain to FILENAME.
+// - print: ✓
+//   Prints blockchain on console.
+// - dump:
+//   Shows daemon status
+// - node: ✓
+//   Manage nodes
+//   - new: ✓
+//     Creates a new identifier
+//   - alias NEWALIAS IDENTIFIER: ✓
+//     Creates an ALIAS to IDENTIFIER
+// - send:
+//   Sends AMOUNT from ALIAS/IDENTIFIER to ALIAS/IDENTIFIER
+// - quit/exit: ✓
+//   You know what it does.
 
 
 // ------------------------
@@ -228,66 +303,61 @@ fn main() {
     // Communication channels
     let (tx, rx) = mpsc::channel(); // REPL to Daemon
     let (ty, ry) = mpsc::channel(); // Daemon to REPL
-
-    // Our node
-    let node = Node::new();
-
-    // Another node, just for testing
-    let friend = Node::new();
-
-    println!("Created a new node with identifier {}. This is me.", node.identifier);
-    println!("Created a new node with identifier {}. This is a friend.", friend.identifier);
+    //let (tz, rz) = mpsc::channel(); // Daemon to Log
 
     // Daemon
     let daemon = thread::spawn(move || {
-        println!("Daemon: start");
-
         // Create blockchain
-        // TODO: Populate from existing data
-        let mut blockchain = Blockchain::new();
-        println!("Daemon: Created blockchain");
+        //let mut blockchain = Blockchain::new();
+        let mut blockchain = Blockchain::from_file("blockchain.json".to_owned());
 
+        ty.send(Ok("DAEMON READY".to_owned()));
+        
         loop {
             match rx.recv().unwrap() { // TODO: Workaround for this unwrap
                 ReplCommand::Quit => {
-                    ty.send(Ok("DAEMON QUIT"));
+                    ty.send(Ok("DAEMON QUIT".to_owned()));
                     break
                 },
                 ReplCommand::Print => {
-                    println!("Daemon: Dumping blockchain to console...");
-                    println!("Daemon: {}", serde_json::to_string_pretty(&blockchain).unwrap());
-                    println!("Daemon: Done.");
-                    ty.send(Ok("DAEMON PRINT"));
+                    ty.send(Ok(serde_json::to_string_pretty(&blockchain).unwrap()));
                 },
                 ReplCommand::Transaction { from, to, amount } => {
-                    println!("Daemon: Sending ${} from {} to {}...", amount, from, to);
-                    //println!("Daemon: Not yet implemented");
                     blockchain.new_transaction(from.clone(), to.clone(), amount);
-                    //ty.send(Err("DAEMON NOT IMPLEMENTED"));
-                    ty.send(Ok("TRANSACTION COMPLETED")); // TODO: Validate from balance?
+                    ty.send(Ok("TRANSACTION COMPLETED".to_owned())); // TODO: Validate from balance?
                 },
                 ReplCommand::Mine { miner } => {
-                    println!("Daemon: Mining a new block...");
                     let now = SystemTime::now();
                     blockchain.mine_block(miner.clone());
                     match now.elapsed() {
-                        Ok(elapsed) => println!("Daemon: Finished block mining in {} seconds.", elapsed.as_secs()),
-                        Err(_) => {}
+                        Ok(elapsed) => {
+                            let ans = format!("BLOCK MINED IN {} SECONDS", elapsed.as_secs());
+                            ty.send(Ok(ans.clone()))
+                        },
+                        Err(_) => ty.send(Err("MINING ERROR".to_owned())),
                     };
-                    println!("Daemon: Block mined, $1 rewarded to {}", miner);
                 },
                 _ => {
-                    println!("Daemon: Not yet implemented");
-                    ty.send(Err("DAEMON NOT IMPLEMENTED"));
+                    ty.send(Err("DAEMON NOT IMPLEMENTED".to_owned()));
                 },
             };
         };
 
+        println!("Saving blockchain...");
+        blockchain.to_file("blockchain.json".to_owned());
         println!("Daemon: closed");
     });
 
 
     // REPL
+    // Node aliases
+    // TODO: Put these on our blockchain
+    let mut nodes   = HashMap::new();
+    let mut aliases = HashMap::new();
+
+    // Await daemon response
+    println!("Daemon started: {}", ry.recv().unwrap().unwrap());
+    
     // Editor
     let mut rl = Editor::<()>::new();
 
@@ -300,9 +370,88 @@ fn main() {
         let readline = rl.readline("USER > ");
         match readline {
             Ok(line) => {
-                //rl.add_history_entry(&line);
-                println!("Input: {}", line);
-                // TODO: Parse command here
+                rl.add_history_entry(&line);
+                let atoms = line.split_whitespace()
+                    .collect::<Vec<&str>>();
+
+                // Evaluation
+                if atoms.len() > 0 {
+                    let command = String::from(atoms[0]).to_lowercase();
+                    let args = &atoms[1..];
+
+                    match command.as_ref() {
+                        "quit" => break,
+                        "exit" => break,
+                        "node" => {
+                            if args.len() < 1 {
+                                println!("Please specify what to do with the node.");
+                            } else {
+                                let arg0 = String::from(args[0]).to_lowercase();
+                                match arg0.as_ref() {
+                                    "new" => {
+                                        // New node
+                                        let new_node = Node::new();
+                                        let identifier = new_node.identifier.clone();
+                                        nodes.insert(new_node.identifier.clone(), new_node);
+                                        println!("New node created: {}", identifier);
+                                    },
+                                    "alias" => {
+                                        // Node alias
+                                        if args.len() != 3 {
+                                            println!("Please specify the node alias and its identifier.");
+                                        } else {
+                                            let alias = String::from(args[1]);
+                                            let identifier = String::from(args[2]);
+                                            if nodes.contains_key(&identifier) {
+                                                aliases.insert(alias.clone(), identifier.clone());
+                                            }
+                                            println!("Added alias \"{}\" to identifier {}", alias, identifier);
+                                        }
+                                    },
+                                    _ => println!("Unknown subcommand for \"node\"."),
+                                }
+                            }
+                        },
+                        "mine" => {
+                            if args.len() != 1 {
+                                println!("Please specify the alias or identifier to be rewarded for mining.");
+                            } else {
+                                let miner = String::from(args[0]);
+                                let mut identifier = String::new();
+                                match aliases.get(&miner) {
+                                    Some(id) => identifier = id.clone(),
+                                    None => {
+                                        match nodes.get(&miner) {
+                                            Some(_) => identifier = miner.clone(),
+                                            None => println!("No alias nor registered identifier \"{}\" was found.", miner),
+                                        };
+                                    },
+                                };
+                                
+
+                                if identifier.len() > 0 {
+                                    println!("Starting block mining process...");
+                                    tx.send(ReplCommand::Mine { miner: identifier.clone() });
+                                    println!("Awaiting block mining completion...");
+                                    match ry.recv().unwrap() {
+                                        Ok(status) => println!("Mined block successfully: {}", status),
+                                        Err(status) => println!("Block mining error: {}", status),
+                                    };
+                                }
+                            }
+                        },
+                        "print" => {
+                            println!("Requesting blockchain in readable format...");
+                            tx.send(ReplCommand::Print);
+                            println!("Retrieving response...");
+                            println!("Printing blockchain:\n{}", ry.recv().unwrap().unwrap());
+                        },
+                        //"send" => {},
+                        //"save" => {},
+                        //"help" => {},
+                        _ => println!("Not Implemented"),
+                    };
+                }
             },
             Err(ReadlineError::Interrupted) => {
                 println!("C-c");
@@ -317,12 +466,14 @@ fn main() {
                 break
             }
         }
+
+        // TODO: Retrieve 
     }
     //rl.save_history("history.txt").unwrap();
 
     
 
-    tx.send(ReplCommand::Mine { miner: node.identifier.clone() }); // Mine the first block
+    /*tx.send(ReplCommand::Mine { miner: node.identifier.clone() }); // Mine the first block
 
     // Send a coin to a friend
     tx.send(ReplCommand::Transaction { from:   node.identifier.clone(),
@@ -339,7 +490,7 @@ fn main() {
                                        to:     friend.identifier.clone(),
                                        amount: 1 });
 
-    tx.send(ReplCommand::Print);
+    tx.send(ReplCommand::Print);*/
     
     tx.send(ReplCommand::Quit);
 
@@ -388,11 +539,11 @@ fn serialize_deserialize() {
 
     // Serialize to string, then reverse it, then serialize
     // the deserialized
-    let serialized = serde_json::to_string_pretty(&blockchain)
+    let serialized = serde_json::to_string(&blockchain)
         .expect("Error while serializing blockchain");
     let deserialized: Blockchain = serde_json::from_str(&serialized)
         .expect("Error while deserializing blockchain");
-    let reserialized = serde_json::to_string_pretty(&deserialized)
+    let reserialized = serde_json::to_string(&deserialized)
         .expect("Error while serializing the new blockchain");
 
     // Test passes if serialization is equal for both
@@ -401,3 +552,5 @@ fn serialize_deserialize() {
     
     assert_eq!(serialized, reserialized);
 }
+
+// TODO: Add daemon test
