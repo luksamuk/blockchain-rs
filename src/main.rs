@@ -26,6 +26,7 @@ extern crate rustyline;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 
 // ----
@@ -55,14 +56,16 @@ struct Block {
 struct Blockchain {
     chain: Vec<Block>,
     current_transactions: Vec<Transaction>,
+    nodes: HashSet<String>,
 }
 
 impl Blockchain {
     // Blockchain constructor.
     fn new() -> Blockchain {
         let mut blockchain = Blockchain {
-            chain: vec![],
+            chain:                vec![],
             current_transactions: vec![],
+            nodes:                HashSet::new(),
         };
         // Create genesis block
         blockchain.new_block(100, Some(String::from("1")));
@@ -214,25 +217,15 @@ impl Blockchain {
         self.new_block(proof, None);
     }
 
-    fn register_node(&mut self) {
+    // Creates a new unique node identifier.
+    // This will not add it to the blockchain.
+    fn new_identifier() -> String {
+        str::replace(Uuid::new_v4().to_string().as_ref(), "-", "")
     }
 }
 
 
 // ---
-#[derive(Serialize, Deserialize)]
-struct Node {
-    identifier: String,
-}
-
-impl Node {
-    fn new() -> Node {
-        Node {
-            identifier: str::replace(Uuid::new_v4().to_string().as_ref(), "-", ""),
-            //balance: 0,
-        }
-    }
-}
 
 
 
@@ -261,6 +254,7 @@ enum ReplCommand {
     Print,
     Dump,
     NewNode,
+    CheckNode { identifier: String },
     Alias { alias: String, identifier: String },
     Quit,
 }
@@ -295,6 +289,46 @@ enum DaemonResponse {
 
 
 // ------------------------
+
+fn load_aliases(filename: String) -> HashMap<String, String> {
+    let mut f = File::open(filename);
+        match f {
+            Err(_) => {
+                println!("Cannot read aliases file.");
+                HashMap::new()
+            },
+            Ok(mut f) => {
+                let mut text = String::new();
+                match f.read_to_string(&mut text) {
+                    Ok(_) => {
+                        let deserialized = serde_json::from_str(text.as_ref());
+                        match deserialized {
+                            Ok(aliases) => aliases,
+                            Err(_)      => {
+                                println!("Cannot parse aliases.");
+                                HashMap::new()
+                            }
+                        }
+                    },
+                    Err(_) => {
+                        println!("Cannot read alias file text.");
+                        HashMap::new()
+                    }
+                }
+            }
+        }
+}
+
+fn save_aliases(aliases: &HashMap<String, String>, filename: String) {
+    let serialized = serde_json::to_string_pretty(aliases)
+        .expect("Unable to serialize aliases!");
+    let mut f = File::create(filename);
+    match f {
+        Err(_) => println!("Unable to create file!"),
+        Ok(mut f) => f.write_all(serialized.as_bytes())
+            .expect("Unable to write aliases to file!"),
+    };
+}
 
 // Stopped at Our Blockchain as an API. I'll have to create a repl and a
 // message system of sorts...
@@ -337,12 +371,25 @@ fn main() {
                         Err(_) => ty.send(Err("MINING ERROR".to_owned())),
                     };
                 },
+                ReplCommand::NewNode => {
+                    let identifier = Blockchain::new_identifier();
+                    blockchain.nodes.insert(identifier.clone());
+                    ty.send(Ok(identifier.clone()));
+                },
+                ReplCommand::CheckNode { identifier } => {
+                    if blockchain.nodes.contains(&identifier) {
+                        ty.send(Ok("NODE EXISTS".to_owned()));
+                    } else {
+                        ty.send(Err("NODE DOESN'T EXIST".to_owned()));
+                    }
+                },
                 _ => {
                     ty.send(Err("DAEMON NOT IMPLEMENTED".to_owned()));
                 },
             };
         };
 
+        // TODO: uncomment this for automatic blockchain saving!
         println!("Saving blockchain...");
         blockchain.to_file("blockchain.json".to_owned());
         println!("Daemon: closed");
@@ -351,9 +398,8 @@ fn main() {
 
     // REPL
     // Node aliases
-    // TODO: Put these on our blockchain
-    let mut nodes   = HashMap::new();
-    let mut aliases = HashMap::new();
+    #[derive(Serialize, Deserialize)]
+    let mut aliases = load_aliases("aliases.json".to_owned());
 
     // Await daemon response
     println!("Daemon started: {}", ry.recv().unwrap().unwrap());
@@ -389,11 +435,10 @@ fn main() {
                                 let arg0 = String::from(args[0]).to_lowercase();
                                 match arg0.as_ref() {
                                     "new" => {
-                                        // New node
-                                        let new_node = Node::new();
-                                        let identifier = new_node.identifier.clone();
-                                        nodes.insert(new_node.identifier.clone(), new_node);
-                                        println!("New node created: {}", identifier);
+                                        // 1. Request node creation from blockchain
+                                        tx.send(ReplCommand::NewNode);
+                                        // 2. Return identifier
+                                        println!("New node created: {}", ry.recv().unwrap().unwrap());
                                     },
                                     "alias" => {
                                         // Node alias
@@ -402,10 +447,18 @@ fn main() {
                                         } else {
                                             let alias = String::from(args[1]);
                                             let identifier = String::from(args[2]);
-                                            if nodes.contains_key(&identifier) {
-                                                aliases.insert(alias.clone(), identifier.clone());
+
+                                            tx.send(ReplCommand::CheckNode { identifier: identifier.clone() });
+
+                                            // 1. Verify node existance in blockchain
+                                            match ry.recv().unwrap() {
+                                                Ok(_) => {
+                                                    // 2. Add alias
+                                                    aliases.insert(alias.clone(), identifier.clone());
+                                                    println!("Added alias \"{}\" to identifier {}", alias, identifier);
+                                                },
+                                                Err(msg) => println!("Node alias registration error: {}", msg),
                                             }
-                                            println!("Added alias \"{}\" to identifier {}", alias, identifier);
                                         }
                                     },
                                     _ => println!("Unknown subcommand for \"node\"."),
@@ -418,12 +471,14 @@ fn main() {
                             } else {
                                 let miner = String::from(args[0]);
                                 let mut identifier = String::new();
+                                
                                 match aliases.get(&miner) {
                                     Some(id) => identifier = id.clone(),
                                     None => {
-                                        match nodes.get(&miner) {
-                                            Some(_) => identifier = miner.clone(),
-                                            None => println!("No alias nor registered identifier \"{}\" was found.", miner),
+                                        tx.send(ReplCommand::CheckNode { identifier: miner.clone() });
+                                        match ry.recv().unwrap() {
+                                            Ok(_) => identifier = miner.clone(),
+                                            Err(_) => println!("No alias nor registered identifier \"{}\" was found.", miner),
                                         };
                                     },
                                 };
@@ -495,7 +550,9 @@ fn main() {
     tx.send(ReplCommand::Quit);
 
     // Also, use ry to receive Daemon feedback.
-    
+
+    println!("Saving aliases...");
+    save_aliases(&aliases, "aliases.json".to_owned());
     daemon.join();
 }
 
