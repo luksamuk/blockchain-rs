@@ -27,6 +27,13 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::mpsc::{Sender, Receiver};
+
+
+// HTTP server crates and uses
+extern crate tiny_http; //https://tiny-http.github.io/tiny-http/tiny_http/index.html
+
+use tiny_http::Method;
 
 
 // ----
@@ -225,6 +232,13 @@ impl Blockchain {
 }
 
 
+// Each node is indexed in the blockchain and represents a registered
+// node on the network.
+// This structure will contain the node data required for connection.
+struct Node {
+    address: String,
+}
+
 // ---
 
 
@@ -232,18 +246,8 @@ impl Blockchain {
 // ------------------------
 // The original tutorial used Flask with a web interface for the operations.
 // However, I'll be building a CLI interface instead. A process will run
-// on the background and effectively mine and do the transactions and stuff,
+// on the background and effectively mine and do the transactions, consensus, etc,
 // while the client will be responsible to communicate with the background process.
-
-// Therefore, my work here will be:
-// 1. Forking the process to the background
-// 2. Create a CLI tool -- a REPL of sorts -- to perform common operations:
-//    a. Create a new transaction (From, To)
-//    b. Mine a new block
-//    c. Save the full blockchain
-//    d. Print the blockchain to the console
-// 3. Manage daemon/repl communications by creating an eval loop on the
-//    daemon, which receives messages and performs actions.
 
 // Signal sending enum
 enum ReplCommand {
@@ -257,11 +261,8 @@ enum ReplCommand {
     CheckNode { identifier: String },
     Alias { alias: String, identifier: String },
     Quit,
-}
 
-// Signal receiving enum
-enum DaemonResponse {
-    
+    HttpGetChain,
 }
 
 // REPL implementation
@@ -280,6 +281,8 @@ enum DaemonResponse {
 //   Manage nodes
 //   - new: ✓
 //     Creates a new identifier
+//   - alias show: ✓
+//     Shows registered aliases
 //   - alias NEWALIAS IDENTIFIER: ✓
 //     Creates an ALIAS to IDENTIFIER
 // - send:
@@ -290,6 +293,8 @@ enum DaemonResponse {
 
 // ------------------------
 
+// Loads aliases from an aliases file, then deserializes it to
+// a HashMap.
 fn load_aliases(filename: String) -> HashMap<String, String> {
     let mut f = File::open(filename);
         match f {
@@ -319,6 +324,7 @@ fn load_aliases(filename: String) -> HashMap<String, String> {
         }
 }
 
+// Serializes aliases to a JSON file.
 fn save_aliases(aliases: &HashMap<String, String>, filename: String) {
     let serialized = serde_json::to_string_pretty(aliases)
         .expect("Unable to serialize aliases!");
@@ -330,6 +336,8 @@ fn save_aliases(aliases: &HashMap<String, String>, filename: String) {
     };
 }
 
+// ------------------------
+
 // Stopped at Our Blockchain as an API. I'll have to create a repl and a
 // message system of sorts...
 // The consensus is also missing! We need to implement the consensus.
@@ -338,8 +346,10 @@ fn main() {
     let (tx, rx) = mpsc::channel(); // REPL to Daemon
     let (ty, ry) = mpsc::channel(); // Daemon to REPL
     //let (tz, rz) = mpsc::channel(); // Daemon to Log
+    let (tz, rz) = mpsc::channel();  // Daemon to HTTP service; receiver only
+    let txhttp = tx.clone();
 
-    // Daemon
+    /* ===== DAEMON ===== */
     let daemon = thread::spawn(move || {
         // Create blockchain
         //let mut blockchain = Blockchain::new();
@@ -383,6 +393,10 @@ fn main() {
                         ty.send(Err("NODE DOESN'T EXIST".to_owned()));
                     }
                 },
+                ReplCommand::HttpGetChain => {
+                    let chain_serialized: String = serde_json::to_string(&blockchain.chain).unwrap();
+                    tz.send(chain_serialized.clone());
+                },
                 _ => {
                     ty.send(Err("DAEMON NOT IMPLEMENTED".to_owned()));
                 },
@@ -392,11 +406,31 @@ fn main() {
         // TODO: uncomment this for automatic blockchain saving!
         println!("Saving blockchain...");
         blockchain.to_file("blockchain.json".to_owned());
-        println!("Daemon: closed");
+            println!("Daemon: closed");
+    });
+
+    /* ===== HTTP SERVER ===== */
+    let server = thread::spawn(move || {
+        let server = tiny_http::Server::http("127.0.0.1:3000").unwrap();
+        loop {
+            match server.recv() {
+                Ok(req) => {
+                    if req.method() == &Method::Get && req.url() == "/chain" { // curl -X GET "http://127.0.0.1:3000/chain"
+                        txhttp.send(ReplCommand::HttpGetChain);
+                        let response = tiny_http::Response::from_string(rz.recv().unwrap());
+                        req.respond(response);
+                    } else {
+                        req.respond(tiny_http::Response::empty(404));
+                    }
+                },
+                Err(_) => {
+                },
+            }
+        }
     });
 
 
-    // REPL
+    /* ===== REPL ===== */
     // Node aliases
     #[derive(Serialize, Deserialize)]
     let mut aliases = load_aliases("aliases.json".to_owned());
@@ -411,6 +445,7 @@ fn main() {
     /*if let Err(_) = rl.load_history("history.txt") {
         println!("No previous history.");
     }*/
+
     
     loop {
         let readline = rl.readline("USER > ");
@@ -442,7 +477,11 @@ fn main() {
                                     },
                                     "alias" => {
                                         // Node alias
-                                        if args.len() != 3 {
+                                        if args.len() == 2 && args[1].to_lowercase() == "show" {
+                                            for (alias, identifier) in &aliases {
+                                                println!("{}: {}", alias, identifier);
+                                            }
+                                        } else if args.len() != 3 { // node alias ALIAS IDENTIFIER
                                             println!("Please specify the node alias and its identifier.");
                                         } else {
                                             let alias = String::from(args[1]);
