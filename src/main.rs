@@ -32,9 +32,11 @@ use std::sync::mpsc::{Sender, Receiver};
 
 // HTTP server crates and uses
 extern crate tiny_http; //https://tiny-http.github.io/tiny-http/tiny_http/index.html
+extern crate url;
 
 use tiny_http::Method;
 use std::env;
+use url::Url;
 
 
 // ----
@@ -64,7 +66,7 @@ struct Block {
 struct Blockchain {
     chain: Vec<Block>,
     current_transactions: Vec<Transaction>,
-    nodes: HashSet<String>,
+    nodes: HashMap<String, Node>,
 }
 
 impl Blockchain {
@@ -73,7 +75,7 @@ impl Blockchain {
         let mut blockchain = Blockchain {
             chain:                vec![],
             current_transactions: vec![],
-            nodes:                HashSet::new(),
+            nodes:                HashMap::new(),
         };
         // Create genesis block
         blockchain.new_block(100, Some(String::from("1")));
@@ -236,6 +238,7 @@ impl Blockchain {
 // Each node is indexed in the blockchain and represents a registered
 // node on the network.
 // This structure will contain the node data required for connection.
+#[derive(Serialize, Deserialize, Clone)]
 struct Node {
     identifier: String,
 }
@@ -269,6 +272,7 @@ enum ReplCommand {
     Print,
     Dump,
     NewNode,
+    RegNode { url: String },
     CheckNode { identifier: String },
     Alias { alias: String, identifier: String },
     Quit,
@@ -290,6 +294,9 @@ enum ReplCommand {
 //   Shows daemon status
 // - node: ✓
 //   Manage nodes
+//   - register ADDRESS:
+//     Registers a node to the network.
+//     TODO: Fetch identifier?
 //   - new: ✓
 //     Creates a new local identifier
 //   - alias show: ✓
@@ -389,6 +396,7 @@ fn main() {
     
 
     /* ===== DAEMON ===== */
+    let my_node_name = format!("http://127.0.0.1:{}", node_port);
     let daemon = thread::spawn(move || {
         // Create blockchain
         let mut blockchain = Blockchain::from_file("blockchain.json".to_owned());
@@ -421,11 +429,22 @@ fn main() {
                 },
                 ReplCommand::NewNode => {
                     let identifier = Blockchain::new_identifier();
-                    blockchain.nodes.insert(identifier.clone());
+                    blockchain.nodes.insert(my_node_name.clone(), Node { identifier: identifier.clone() });
                     ty.send(Ok(identifier.clone()));
                 },
+                ReplCommand::RegNode { url } => {
+                    blockchain.nodes.insert(url.clone(), Node { identifier: String::new() });
+                    ty.send(Ok("REGISTERED".to_owned()));
+                },
                 ReplCommand::CheckNode { identifier } => {
-                    if blockchain.nodes.contains(&identifier) {
+                    let mut exists = false;
+                    for (_, node) in &blockchain.nodes {
+                        if node.identifier == identifier {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if exists {
                         ty.send(Ok("NODE EXISTS".to_owned()));
                     } else {
                         ty.send(Err("NODE DOESN'T EXIST".to_owned()));
@@ -552,6 +571,23 @@ fn main() {
                                                     println!("Added alias \"{}\" to identifier {}", alias, identifier);
                                                 },
                                                 Err(msg) => println!("Node alias registration error: {}", msg),
+                                            }
+                                        }
+                                    },
+                                    "register" => {
+                                        if args.len() != 2 {
+                                            println!("Please specify an address for the node.");
+                                        } else {
+                                            let url = args[1].to_owned();
+                                            match Url::parse(url.as_ref()) {
+                                                Ok(_) => {
+                                                    tx.send(ReplCommand::RegNode { url: url.clone() });
+                                                    let _ = ry.recv().unwrap();
+                                                    println!("Node registered successfully.");
+                                                },
+                                                Err(_) => {
+                                                    println!("Please provide a valid URL.");
+                                                },
                                             }
                                         }
                                     },
