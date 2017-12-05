@@ -31,12 +31,15 @@ use std::sync::mpsc::{Sender, Receiver};
 
 
 // HTTP server crates and uses
-extern crate tiny_http; //https://tiny-http.github.io/tiny-http/tiny_http/index.html
+extern crate tiny_http;
 extern crate url;
+extern crate reqwest;
+
 
 use tiny_http::Method;
 use std::env;
 use url::Url;
+use std::io::{self, Write, Read};
 
 
 // ----
@@ -232,26 +235,78 @@ impl Blockchain {
     fn new_identifier() -> String {
         str::replace(Uuid::new_v4().to_string().as_ref(), "-", "")
     }
+
+    // Determines if a blockchain is valid.
+    // chain: Vector of blocks, normally fetched from remote node
+    fn valid_chain(chain: &Vec<Block>) -> bool {
+        for i in 1..chain.len() {
+            // Check if hash of block is correct
+            if chain[i].previous_hash != Blockchain::hash(&chain[i - 1]) {
+                return false;
+            }
+            // Check if proof of work is correct
+            if !Blockchain::valid_proof(chain[i - 1].proof, chain[i].proof) {
+                return false;
+            }
+        }
+        true
+    }
+
+    // This is our Consensus Algorithm. It resolves conflicts
+    // by replacing our chain with the longest one on the
+    // network.
+    // Return: Whether our chain was replaced or not.
+    fn resolve_conflicts(&mut self) -> bool {
+        // We're only looking for chains bigger than ours
+        let mut max_length = self.chain.len();
+        let mut new_chain: Option<Vec<Block>> = None;
+
+        // Grab and verify the chains from all nodes on the network
+        for (node, _) in &self.nodes {
+            if node != "local" {
+                let proto_uri = format!("{}/chain", node);
+                //println!("Fetching chain from {}", proto_uri);
+
+                // Reqwest glue code
+                let mut res = reqwest::get(proto_uri.as_ref() as &str).unwrap();
+
+                if res.status().is_success() {
+                    let mut body = String::new();
+                    res.read_to_string(&mut body);
+                    let chain: Vec<Block> = match serde_json::from_str(&body) {
+                        Ok(deserialized) => deserialized,
+                        Err(_) => vec![],
+                    };
+                    //println!("Comparing chain: {}", body);
+
+                    // We're looking only for chains bigger than ours.
+                    if chain.len() > max_length && Blockchain::valid_chain(&chain) {
+                        new_chain = Some(chain.clone());
+                        max_length = chain.len();
+                    }
+                } else {
+                    //println!("Error fetching remote chain: HTTP {}", res.status());
+                }
+            }
+        }
+        match new_chain {
+            Some(chain) => {
+                self.chain = chain.clone();
+                true
+            },
+            None => false
+        }
+    }
 }
 
 
 // Each node is indexed in the blockchain and represents a registered
 // node on the network.
-// This structure will contain the node data required for connection.
+// This structure will contain the node data required for transactions.
 #[derive(Serialize, Deserialize, Clone)]
 struct Node {
     identifier: String,
 }
-
-
-/***********
-  STORING NODES
-At first I thought about storing nodes with their UUID names,
-but it may be best to store them as follows.
-=> HASHMAP: Each node would now be stored in a hashmap structure, containing
-   -> key: The node's address.
-   -> content: [ identifier ]
- ***********/
 
 // ---
 
@@ -275,6 +330,7 @@ enum ReplCommand {
     RegNode { url: String },
     CheckNode { identifier: String },
     Alias { alias: String, identifier: String },
+    Resolve,
     Quit,
 
     HttpGetChain,
@@ -294,7 +350,7 @@ enum ReplCommand {
 //   Shows daemon status
 // - node: ✓
 //   Manage nodes
-//   - register ADDRESS:
+//   - register ADDRESS: ✓
 //     Registers a node to the network.
 //     TODO: Fetch identifier?
 //   - new: ✓
@@ -305,6 +361,8 @@ enum ReplCommand {
 //     Creates an ALIAS to IDENTIFIER
 // - send:
 //   Sends AMOUNT from ALIAS/IDENTIFIER to ALIAS/IDENTIFIER
+// - resolve:
+//   Resolves differences on the current node with all others.
 // - quit/exit: ✓
 //   You know what it does.
 
@@ -396,7 +454,7 @@ fn main() {
     
 
     /* ===== DAEMON ===== */
-    let my_node_name = format!("http://127.0.0.1:{}", node_port);
+    let my_node_name = String::from("local");
     let daemon = thread::spawn(move || {
         // Create blockchain
         let mut blockchain = Blockchain::from_file("blockchain.json".to_owned());
@@ -449,6 +507,13 @@ fn main() {
                     } else {
                         ty.send(Err("NODE DOESN'T EXIST".to_owned()));
                     }
+                },
+                ReplCommand::Resolve => {
+                    let changed = blockchain.resolve_conflicts();
+                    match changed {
+                        true  => ty.send(Ok("CHAIN UPDATED".to_owned())),
+                        false => ty.send(Ok("CHAIN UP-TO-DATE".to_owned())),
+                    };
                 },
                 ReplCommand::HttpGetChain => {
                     let chain_serialized: String = serde_json::to_string(&blockchain.chain).unwrap();
@@ -631,6 +696,11 @@ fn main() {
                             println!("Retrieving response...");
                             println!("Printing blockchain:\n{}", ry.recv().unwrap().unwrap());
                         },
+                        "resolve" => {
+                            println!("Resolving conflicts between this node and others...");
+                            tx.send(ReplCommand::Resolve);
+                            println!("Resolving finished. Daemon response: {}", ry.recv().unwrap().unwrap());
+                        },
                         //"send" => {},
                         //"save" => {},
                         //"help" => {},
@@ -683,7 +753,7 @@ fn main() {
 
     println!("Saving aliases...");
     save_aliases(&aliases, "aliases.json".to_owned());
-    daemon.join();
+    let _ = daemon.join();
 }
 
 
