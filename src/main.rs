@@ -34,6 +34,7 @@ use std::sync::mpsc::{Sender, Receiver};
 extern crate tiny_http; //https://tiny-http.github.io/tiny-http/tiny_http/index.html
 
 use tiny_http::Method;
+use std::env;
 
 
 // ----
@@ -236,8 +237,18 @@ impl Blockchain {
 // node on the network.
 // This structure will contain the node data required for connection.
 struct Node {
-    address: String,
+    identifier: String,
 }
+
+
+/***********
+  STORING NODES
+At first I thought about storing nodes with their UUID names,
+but it may be best to store them as follows.
+=> HASHMAP: Each node would now be stored in a hashmap structure, containing
+   -> key: The node's address.
+   -> content: [ identifier ]
+ ***********/
 
 // ---
 
@@ -280,7 +291,7 @@ enum ReplCommand {
 // - node: ✓
 //   Manage nodes
 //   - new: ✓
-//     Creates a new identifier
+//     Creates a new local identifier
 //   - alias show: ✓
 //     Shows registered aliases
 //   - alias NEWALIAS IDENTIFIER: ✓
@@ -343,16 +354,43 @@ fn save_aliases(aliases: &HashMap<String, String>, filename: String) {
 // The consensus is also missing! We need to implement the consensus.
 fn main() {
     // Communication channels
-    let (tx, rx) = mpsc::channel(); // REPL to Daemon
-    let (ty, ry) = mpsc::channel(); // Daemon to REPL
-    //let (tz, rz) = mpsc::channel(); // Daemon to Log
-    let (tz, rz) = mpsc::channel();  // Daemon to HTTP service; receiver only
-    let txhttp = tx.clone();
+    let (tx, rx) = mpsc::channel();        // REPL to Daemon
+    let (ty, ry) = mpsc::channel();        // Daemon to REPL
+    let (tz, rz) = mpsc::channel();        // Daemon to HTTP service
+    let txhttp = tx.clone();               // HTTP service to Daemon using REPL commands
+    let mut node_port = "3000".to_owned(); // Default HTTP service port
+
+
+
+    /* ===== Console Arguments  ===== */
+    let args: Vec<_> = env::args().collect();
+    for argument in args {
+        let midplace = argument.find('=');
+        match midplace {
+            None => {
+                // Not a configuration, what a shame.
+                // Check for a --help or -h here later.
+            },
+            Some(position) => {
+                let argname = &argument[..position];
+                let argcfg  = &argument[position + 1..];
+                match argname {
+                    "--port" => {
+                        node_port = argcfg.to_owned();
+                    },
+                    _ => {},
+                }
+            }
+        }
+    }
+    
+
+
+    
 
     /* ===== DAEMON ===== */
     let daemon = thread::spawn(move || {
         // Create blockchain
-        //let mut blockchain = Blockchain::new();
         let mut blockchain = Blockchain::from_file("blockchain.json".to_owned());
 
         ty.send(Ok("DAEMON READY".to_owned()));
@@ -409,9 +447,19 @@ fn main() {
             println!("Daemon: closed");
     });
 
+
+
+    
     /* ===== HTTP SERVER ===== */
+    // I use tiny_http here instead of hyper, since I wanted the server to spawn/run from
+    // another thread, and also to have access to some variables I declared above and I
+    // borrow inside of it. Hyper is a lot more robust, but would need some advanced tricks
+    // so I could use the variables above, specially the channels, so I'm just cutting the
+    // crap here and doing a lightweight solution.
+    // Clients, though, are going to use hyper, since I faced some problems with reqwest.
+    println!("Starting server on port {}", node_port);
     let server = thread::spawn(move || {
-        let server = tiny_http::Server::http("127.0.0.1:3000").unwrap();
+        let server = tiny_http::Server::http(format!("127.0.0.1:{}", node_port)).unwrap();
         loop {
             match server.recv() {
                 Ok(req) => {
@@ -424,11 +472,19 @@ fn main() {
                     }
                 },
                 Err(_) => {
+                    // Something here shouldn't have happened. Hmmm.
+                    // I don't care about it, though, unless it kills my server.
+                    panic!("Something terribly wrong has happened with the HTTP server. Please restart.");
                 },
             }
         }
-    });
+    }); // Unfortunately, I'm doing something wrong with this: I don't check for thread
+    // finishing. I know this is bad, but I still need to figure out a way to make this
+    // thread die. It could be forcibly, though, since it isn't running any crucial
+    // operations.
 
+
+    
 
     /* ===== REPL ===== */
     // Node aliases
@@ -446,7 +502,7 @@ fn main() {
         println!("No previous history.");
     }*/
 
-    
+    // REPL's loop
     loop {
         let readline = rl.readline("USER > ");
         match readline {
@@ -461,8 +517,7 @@ fn main() {
                     let args = &atoms[1..];
 
                     match command.as_ref() {
-                        "quit" => break,
-                        "exit" => break,
+                        "quit" | "exit" => break,
                         "node" => {
                             if args.len() < 1 {
                                 println!("Please specify what to do with the node.");
