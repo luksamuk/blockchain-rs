@@ -59,23 +59,23 @@ Since this is basically a node-less identifier, I might remove this command soon
 Manages node aliases for transactions. I might fork these operations to a wallet command soon.
 This is also comprised of the following commands/arguments:
 
-##### NEW-ALIAS IDENTIFIER
+- NEW-ALIAS IDENTIFIER
 Creates an alias NEW-ALIAS for the identifier IDENTIFIER. This will come in handy for transfers, so you can avoid typing or pasting the same chain of characters over and over again. Think of this as adding an address to a contacts list.
 
-##### show
+- show
 Shows all registered aliases for this node.
 
-#### save FILENAME (WIP)
+- save FILENAME (WIP)
 Saves aliases to FILENAME or, if omitted, to `aliases.json`.
 Note that these aliases will be saved once you close the application.
 
 ### send (WIP)
 Creates a new transaction. Is comprised of two arities:
 
-#### AMOUNT DESTINATION (WIP)
+- AMOUNT DESTINATION (WIP)
 Sends AMOUNT to DESTINATION. DESTINATION can be an alias or an identifier.
 
-#### AMOUNT SOURCE DESTINATION (WIP)
+- AMOUNT SOURCE DESTINATION (WIP)
 Sends AMOUNT from SOURCE to DESTINATION. I might remove this option depending on how I'm going to handle the difference between nodes and identifiers in the future.
 
 ### resolve
