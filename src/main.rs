@@ -1,6 +1,3 @@
-// This code is largely inspired on article:
-// https://hackernoon.com/learn-blockchains-by-building-one-117428612f46
-
 // Blockchain crates and uses
 #[macro_use]
 extern crate serde_derive;
@@ -17,7 +14,6 @@ use std::sync::mpsc;
 use uuid::Uuid;
 use std::time::SystemTime;
 use std::fs::File;
-use std::io::prelude::*;
 
 
 // REPL crates and uses
@@ -26,8 +22,6 @@ extern crate rustyline;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::collections::HashMap;
-use std::collections::HashSet;
-use std::sync::mpsc::{Sender, Receiver};
 
 
 // HTTP server crates and uses
@@ -39,7 +33,7 @@ extern crate reqwest;
 use tiny_http::Method;
 use std::env;
 use url::Url;
-use std::io::{self, Write, Read};
+use std::io::{Write, Read};
 
 
 // ----
@@ -87,7 +81,7 @@ impl Blockchain {
 
     // Load blockchain from file
     fn from_file(filename: String) -> Blockchain {
-        let mut f = File::open(filename);
+        let f = File::open(filename);
         match f {
             Err(_) => {
                 println!("Cannot read blockchain file. Creating a new one.");
@@ -120,9 +114,11 @@ impl Blockchain {
 
     // Saves blockchain to file
     fn to_file(&self, filename: String) {
+        // TODO: There must be a way not to lose the chain here...
         let serialized = serde_json::to_string_pretty(&self)
-            .expect("Unable to serialize blockchain!"); // TODO: There must be a way not to lose the chain here...
-        let mut f = File::create(filename);
+            .expect("Unable to serialize blockchain!");
+        
+        let f = File::create(filename);
         match f {
             Err(_) => println!("Unable to create file!"),
             Ok(mut f) => f.write_all(serialized.as_bytes())
@@ -272,7 +268,7 @@ impl Blockchain {
 
                 if res.status().is_success() {
                     let mut body = String::new();
-                    res.read_to_string(&mut body);
+                    let _ = res.read_to_string(&mut body);
                     let chain: Vec<Block> = match serde_json::from_str(&body) {
                         Ok(deserialized) => deserialized,
                         Err(_) => vec![],
@@ -341,7 +337,8 @@ enum ReplCommand {
 // - help:
 //   Shows help.
 // - mine ALIAS/IDENTIFIER: ✓
-//   Mines a new block.
+//   Mines a new block. TODO: Remove identification to mine for local node!
+//                            This also implies a local ID on blockchain creation
 // - save FILENAME:
 //   Saves blockchain to FILENAME.
 // - print: ✓
@@ -359,9 +356,13 @@ enum ReplCommand {
 //     Shows registered aliases
 //   - alias NEWALIAS IDENTIFIER: ✓
 //     Creates an ALIAS to IDENTIFIER
+//   - alias save FILENAME
+//     Saves alias file
 // - send:
-//   Sends AMOUNT from ALIAS/IDENTIFIER to ALIAS/IDENTIFIER
-// - resolve:
+//   Makes a transaction
+//   - AMOUNT TO
+//   - AMOUNT FROM TO
+// - resolve: ✓
 //   Resolves differences on the current node with all others.
 // - quit/exit: ✓
 //   You know what it does.
@@ -372,7 +373,7 @@ enum ReplCommand {
 // Loads aliases from an aliases file, then deserializes it to
 // a HashMap.
 fn load_aliases(filename: String) -> HashMap<String, String> {
-    let mut f = File::open(filename);
+    let f = File::open(filename);
         match f {
             Err(_) => {
                 println!("Cannot read aliases file.");
@@ -404,7 +405,7 @@ fn load_aliases(filename: String) -> HashMap<String, String> {
 fn save_aliases(aliases: &HashMap<String, String>, filename: String) {
     let serialized = serde_json::to_string_pretty(aliases)
         .expect("Unable to serialize aliases!");
-    let mut f = File::create(filename);
+    let f = File::create(filename);
     match f {
         Err(_) => println!("Unable to create file!"),
         Ok(mut f) => f.write_all(serialized.as_bytes())
@@ -459,25 +460,25 @@ fn main() {
         // Create blockchain
         let mut blockchain = Blockchain::from_file("blockchain.json".to_owned());
 
-        ty.send(Ok("DAEMON READY".to_owned()));
+        let _ = ty.send(Ok("DAEMON READY".to_owned()));
         
         loop {
             match rx.recv().unwrap() { // TODO: Workaround for this unwrap
                 ReplCommand::Quit => {
-                    ty.send(Ok("DAEMON QUIT".to_owned()));
+                    let _ = ty.send(Ok("DAEMON QUIT".to_owned()));
                     break
                 },
                 ReplCommand::Print => {
-                    ty.send(Ok(serde_json::to_string_pretty(&blockchain).unwrap()));
+                    let _ = ty.send(Ok(serde_json::to_string_pretty(&blockchain).unwrap()));
                 },
                 ReplCommand::Transaction { from, to, amount } => {
                     blockchain.new_transaction(from.clone(), to.clone(), amount);
-                    ty.send(Ok("TRANSACTION COMPLETED".to_owned())); // TODO: Validate from balance?
+                    let _ = ty.send(Ok("TRANSACTION COMPLETED".to_owned())); // TODO: Validate from balance?
                 },
                 ReplCommand::Mine { miner } => {
                     let now = SystemTime::now();
                     blockchain.mine_block(miner.clone());
-                    match now.elapsed() {
+                    let _ = match now.elapsed() {
                         Ok(elapsed) => {
                             let ans = format!("BLOCK MINED IN {} SECONDS", elapsed.as_secs());
                             ty.send(Ok(ans.clone()))
@@ -488,11 +489,11 @@ fn main() {
                 ReplCommand::NewNode => {
                     let identifier = Blockchain::new_identifier();
                     blockchain.nodes.insert(my_node_name.clone(), Node { identifier: identifier.clone() });
-                    ty.send(Ok(identifier.clone()));
+                    let _ = ty.send(Ok(identifier.clone()));
                 },
                 ReplCommand::RegNode { url } => {
                     blockchain.nodes.insert(url.clone(), Node { identifier: String::new() });
-                    ty.send(Ok("REGISTERED".to_owned()));
+                    let _ = ty.send(Ok("REGISTERED".to_owned()));
                 },
                 ReplCommand::CheckNode { identifier } => {
                     let mut exists = false;
@@ -503,24 +504,24 @@ fn main() {
                         }
                     }
                     if exists {
-                        ty.send(Ok("NODE EXISTS".to_owned()));
+                        let _ = ty.send(Ok("NODE EXISTS".to_owned()));
                     } else {
-                        ty.send(Err("NODE DOESN'T EXIST".to_owned()));
+                        let _ = ty.send(Err("NODE DOESN'T EXIST".to_owned()));
                     }
                 },
                 ReplCommand::Resolve => {
                     let changed = blockchain.resolve_conflicts();
-                    match changed {
+                    let _ = match changed {
                         true  => ty.send(Ok("CHAIN UPDATED".to_owned())),
                         false => ty.send(Ok("CHAIN UP-TO-DATE".to_owned())),
                     };
                 },
                 ReplCommand::HttpGetChain => {
                     let chain_serialized: String = serde_json::to_string(&blockchain.chain).unwrap();
-                    tz.send(chain_serialized.clone());
+                    let _ = tz.send(chain_serialized.clone());
                 },
                 _ => {
-                    ty.send(Err("DAEMON NOT IMPLEMENTED".to_owned()));
+                    let _ = ty.send(Err("DAEMON NOT IMPLEMENTED".to_owned()));
                 },
             };
         };
@@ -548,11 +549,11 @@ fn main() {
             match server.recv() {
                 Ok(req) => {
                     if req.method() == &Method::Get && req.url() == "/chain" { // curl -X GET "http://127.0.0.1:3000/chain"
-                        txhttp.send(ReplCommand::HttpGetChain);
+                        let _ = txhttp.send(ReplCommand::HttpGetChain);
                         let response = tiny_http::Response::from_string(rz.recv().unwrap());
-                        req.respond(response);
+                        let _ = req.respond(response);
                     } else {
-                        req.respond(tiny_http::Response::empty(404));
+                        let _ = req.respond(tiny_http::Response::empty(404));
                     }
                 },
                 Err(_) => {
@@ -610,7 +611,7 @@ fn main() {
                                 match arg0.as_ref() {
                                     "new" => {
                                         // 1. Request node creation from blockchain
-                                        tx.send(ReplCommand::NewNode);
+                                        let _ = tx.send(ReplCommand::NewNode);
                                         // 2. Return identifier
                                         println!("New node created: {}", ry.recv().unwrap().unwrap());
                                     },
@@ -626,7 +627,7 @@ fn main() {
                                             let alias = String::from(args[1]);
                                             let identifier = String::from(args[2]);
 
-                                            tx.send(ReplCommand::CheckNode { identifier: identifier.clone() });
+                                            let _ = tx.send(ReplCommand::CheckNode { identifier: identifier.clone() });
 
                                             // 1. Verify node existance in blockchain
                                             match ry.recv().unwrap() {
@@ -646,7 +647,7 @@ fn main() {
                                             let url = args[1].to_owned();
                                             match Url::parse(url.as_ref()) {
                                                 Ok(_) => {
-                                                    tx.send(ReplCommand::RegNode { url: url.clone() });
+                                                    let _ = tx.send(ReplCommand::RegNode { url: url.clone() });
                                                     let _ = ry.recv().unwrap();
                                                     println!("Node registered successfully.");
                                                 },
@@ -670,7 +671,7 @@ fn main() {
                                 match aliases.get(&miner) {
                                     Some(id) => identifier = id.clone(),
                                     None => {
-                                        tx.send(ReplCommand::CheckNode { identifier: miner.clone() });
+                                        let _ = tx.send(ReplCommand::CheckNode { identifier: miner.clone() });
                                         match ry.recv().unwrap() {
                                             Ok(_) => identifier = miner.clone(),
                                             Err(_) => println!("No alias nor registered identifier \"{}\" was found.", miner),
@@ -681,7 +682,7 @@ fn main() {
 
                                 if identifier.len() > 0 {
                                     println!("Starting block mining process...");
-                                    tx.send(ReplCommand::Mine { miner: identifier.clone() });
+                                    let _ = tx.send(ReplCommand::Mine { miner: identifier.clone() });
                                     println!("Awaiting block mining completion...");
                                     match ry.recv().unwrap() {
                                         Ok(status) => println!("Mined block successfully: {}", status),
@@ -692,13 +693,13 @@ fn main() {
                         },
                         "print" => {
                             println!("Requesting blockchain in readable format...");
-                            tx.send(ReplCommand::Print);
+                            let _ = tx.send(ReplCommand::Print);
                             println!("Retrieving response...");
                             println!("Printing blockchain:\n{}", ry.recv().unwrap().unwrap());
                         },
                         "resolve" => {
                             println!("Resolving conflicts between this node and others...");
-                            tx.send(ReplCommand::Resolve);
+                            let _ = tx.send(ReplCommand::Resolve);
                             println!("Resolving finished. Daemon response: {}", ry.recv().unwrap().unwrap());
                         },
                         //"send" => {},
@@ -747,7 +748,7 @@ fn main() {
 
     tx.send(ReplCommand::Print);*/
     
-    tx.send(ReplCommand::Quit);
+    let _ = tx.send(ReplCommand::Quit);
 
     // Also, use ry to receive Daemon feedback.
 
