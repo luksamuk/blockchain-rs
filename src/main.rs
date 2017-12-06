@@ -36,6 +36,28 @@ use url::Url;
 use std::io::{Write, Read};
 
 
+
+// ----
+// Help commands
+static HELP_PROMPT: &'static str =
+    "help                -- Shows this prompt.\n\
+     mine                -- [TO-DO] Mines a new block and rewards local node.\n\
+     mine ID             -- Mines a new block and rewards ID for it.\n\
+     save                -- Saves blockchain to blockchain.json.\n\
+     save FILE           -- [TO-DO] Saves blockchain to FILE.\n\
+     print               -- Dumps blockchain to console as indented JSON.\n\
+     dump                -- [TO-DO] Show blockchain statistics.\n\
+     node register ADDR  -- Registers an address of format https://127.0.0.1:3000 as a node.\n\
+     node new            -- Generates a new local identifier.\n\
+     node alias ALIAS ID -- Registers ALIAS as an alias for identifier ID.\n\
+     node show           -- Shows registered aliases.\n\
+     node save           -- [TO-DO] Saves aliases to aliases.json.\n\
+     node save FILE      -- [TO-DO] Saves aliases to FILE.\n\
+     send VAL DEST       -- [TO-DO] Sends a value VAL from a local identifier to DEST.\n\
+     send VAL SRC DEST   -- [TO-DO] Sends a value VAL from SRC to DEST.\n\
+     resolve             -- Scans through all registered nodes and resolves chain conflicts.\n\
+     quit/exit           -- Closes program, saving the blockchain and aliases to default files.";
+
 // ----
 
 
@@ -316,7 +338,6 @@ struct Node {
 
 // Signal sending enum
 enum ReplCommand {
-    Help,
     Transaction { from: String, to: String, amount: u64 },
     Mine { miner: String },
     Save { filename: String },
@@ -325,47 +346,11 @@ enum ReplCommand {
     NewNode,
     RegNode { url: String },
     CheckNode { identifier: String },
-    Alias { alias: String, identifier: String },
     Resolve,
     Quit,
 
     HttpGetChain,
 }
-
-// REPL implementation
-// Commands:
-// - help:
-//   Shows help.
-// - mine ALIAS/IDENTIFIER: ✓
-//   Mines a new block. TODO: Remove identification to mine for local node!
-//                            This also implies a local ID on blockchain creation
-// - save FILENAME:
-//   Saves blockchain to FILENAME.
-// - print: ✓
-//   Prints blockchain on console.
-// - dump:
-//   Shows daemon status
-// - node: ✓
-//   Manage nodes
-//   - register ADDRESS: ✓
-//     Registers a node to the network.
-//     TODO: Fetch identifier?
-//   - new: ✓
-//     Creates a new local identifier
-//   - alias show: ✓
-//     Shows registered aliases
-//   - alias NEWALIAS IDENTIFIER: ✓
-//     Creates an ALIAS to IDENTIFIER
-//   - alias save FILENAME
-//     Saves alias file
-// - send:
-//   Makes a transaction
-//   - AMOUNT TO
-//   - AMOUNT FROM TO
-// - resolve: ✓
-//   Resolves differences on the current node with all others.
-// - quit/exit: ✓
-//   You know what it does.
 
 
 // ------------------------
@@ -419,15 +404,12 @@ fn save_aliases(aliases: &HashMap<String, String>, filename: String) {
 // message system of sorts...
 // The consensus is also missing! We need to implement the consensus.
 fn main() {
-    // Communication channels
-    let (tx, rx) = mpsc::channel();        // REPL to Daemon
-    let (ty, ry) = mpsc::channel();        // Daemon to REPL
-    let (tz, rz) = mpsc::channel();        // Daemon to HTTP service
-    let txhttp = tx.clone();               // HTTP service to Daemon using REPL commands
     let mut node_port = "3000".to_owned(); // Default HTTP service port
 
-
-
+    println!("blockchain-rs 0.5.0");
+    println!("Copyright (C) 2017 Lucas Vieira.");
+    println!("This program is distributed under the MIT License. Check source code for details.");
+    
     /* ===== Console Arguments  ===== */
     let args: Vec<_> = env::args().collect();
     for argument in args {
@@ -436,6 +418,18 @@ fn main() {
             None => {
                 // Not a configuration, what a shame.
                 // Check for a --help or -h here later.
+                match argument.as_ref() {
+                    "-h" | "--help" => {
+                        println!("Command line options:");
+                        println!(" -h | --help       Shows help prompt.");
+                        println!(" --port=XXXX       Uses port XXXX as HTTP port, instead of 3000.");
+                        println!("\nREPL commands:\n{}", HELP_PROMPT);
+                        return;
+                    },
+                    _ => {
+                        // Unknown command
+                    },
+                }
             },
             Some(position) => {
                 let argname = &argument[..position];
@@ -449,8 +443,12 @@ fn main() {
             }
         }
     }
-    
 
+    // Communication channels
+    let (tx, rx) = mpsc::channel();        // REPL to Daemon
+    let (ty, ry) = mpsc::channel();        // Daemon to REPL
+    let (tz, rz) = mpsc::channel();        // Daemon to HTTP service
+    let txhttp = tx.clone();               // HTTP service to Daemon using REPL commands
 
     
 
@@ -588,8 +586,9 @@ fn main() {
     }*/
 
     // REPL's loop
+    println!("For a list of commands, type `help`.");
     loop {
-        let readline = rl.readline("USER > ");
+        let readline = rl.readline("BLOCKCHAIN > ");
         match readline {
             Ok(line) => {
                 rl.add_history_entry(&line);
@@ -704,7 +703,9 @@ fn main() {
                         },
                         //"send" => {},
                         //"save" => {},
-                        //"help" => {},
+                        "help" => {
+                            println!("Useful commands:\n{}", HELP_PROMPT);
+                        },
                         _ => println!("Not Implemented"),
                     };
                 }

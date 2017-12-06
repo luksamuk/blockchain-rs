@@ -90,6 +90,7 @@ This will also save the blockchain to `blockchain.json`.
 I did not follow those, but they might be a source for consulting soon, since I want to improve this implementation.
 - [Build Your Own Blockchain](http://ecomunsing.com/build-your-own-blockchain)
 - [A Blockchain in 200 Lines of Code](https://medium.com/@lhartikk/a-blockchain-in-200-lines-of-code-963cc1cc0e54)
+- [Mastering Blockchain, a Packt eBook. (It was free when I got this link!)](https://www.packtpub.com/packt/offers/free-learning)
 
 
 ## License
