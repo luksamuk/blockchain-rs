@@ -44,15 +44,15 @@ static HELP_PROMPT: &'static str =
      mine                -- [TO-DO] Mines a new block and rewards local node.\n\
      mine ID             -- Mines a new block and rewards ID for it.\n\
      save                -- Saves blockchain to blockchain.json.\n\
-     save FILE           -- [TO-DO] Saves blockchain to FILE.\n\
+     save FILE           -- Saves blockchain to FILE.\n\
      print               -- Dumps blockchain to console as indented JSON.\n\
      dump                -- [TO-DO] Show blockchain statistics.\n\
      node register ADDR  -- Registers an address of format https://127.0.0.1:3000 as a node.\n\
      node new            -- Generates a new local identifier.\n\
      node alias ALIAS ID -- Registers ALIAS as an alias for identifier ID.\n\
      node show           -- Shows registered aliases.\n\
-     node save           -- [TO-DO] Saves aliases to aliases.json.\n\
-     node save FILE      -- [TO-DO] Saves aliases to FILE.\n\
+     node save           -- Saves aliases to aliases.json.\n\
+     node save FILE      -- Saves aliases to FILE.\n\
      send VAL DEST       -- [TO-DO] Sends a value VAL from a local identifier to DEST.\n\
      send VAL SRC DEST   -- [TO-DO] Sends a value VAL from SRC to DEST.\n\
      resolve             -- Scans through all registered nodes and resolves chain conflicts.\n\
@@ -421,7 +421,7 @@ fn main() {
                 match argument.as_ref() {
                     "-h" | "--help" => {
                         println!("Command line options:");
-                        println!(" -h | --help       Shows help prompt.");
+                        println!(" -h | --help       Shows help prompt, then exit.");
                         println!(" --port=XXXX       Uses port XXXX as HTTP port, instead of 3000.");
                         println!("\nREPL commands:\n{}", HELP_PROMPT);
                         return;
@@ -484,6 +484,10 @@ fn main() {
                         Err(_) => ty.send(Err("MINING ERROR".to_owned())),
                     };
                 },
+                ReplCommand::Save { filename } => {
+                    blockchain.to_file(filename.clone());
+                    let _ = ty.send(Ok("FILE SAVED".to_owned()));
+                },
                 ReplCommand::NewNode => {
                     let identifier = Blockchain::new_identifier();
                     blockchain.nodes.insert(my_node_name.clone(), Node { identifier: identifier.clone() });
@@ -527,7 +531,7 @@ fn main() {
         // TODO: uncomment this for automatic blockchain saving!
         println!("Saving blockchain...");
         blockchain.to_file("blockchain.json".to_owned());
-            println!("Daemon: closed");
+        println!("Daemon: closed");
     });
 
 
@@ -656,6 +660,24 @@ fn main() {
                                             }
                                         }
                                     },
+                                    "save" => {
+                                        let mut filename = None;
+                                        if args.len() > 2 {
+                                            println!("Please specify only one filename.");
+                                        } else if args.len() == 2 {
+                                            filename = Some(String::from(args[1]));
+                                        } else if args.len() < 2 {
+                                            filename = Some(String::from("aliases.json"));
+                                        }
+
+                                        match filename {
+                                            Some(file) => {
+                                                save_aliases(&aliases, file.clone());
+                                                println!("Aliases saved to {}", file);
+                                            },
+                                            _ => {}
+                                        };
+                                    },
                                     _ => println!("Unknown subcommand for \"node\"."),
                                 }
                             }
@@ -702,7 +724,24 @@ fn main() {
                             println!("Resolving finished. Daemon response: {}", ry.recv().unwrap().unwrap());
                         },
                         //"send" => {},
-                        //"save" => {},
+                        "save" => {
+                            let mut filename = None;
+                            if args.len() > 1 {
+                                println!("Please specify only one filename.");
+                            } else if args.len() == 1 {
+                                filename = Some(String::from(args[0]));
+                            } else {
+                                filename = Some(String::from("blockchain.json"));
+                            }
+
+                            match filename {
+                                Some(file) => {
+                                    let _ = tx.send(ReplCommand::Save { filename: file.clone() });
+                                    println!("Blockchain saving to {}: {}", file, ry.recv().unwrap().unwrap());
+                                },
+                                _ => {}
+                            };
+                        },
                         "help" => {
                             println!("Useful commands:\n{}", HELP_PROMPT);
                         },
@@ -727,31 +766,8 @@ fn main() {
         // TODO: Retrieve 
     }
     //rl.save_history("history.txt").unwrap();
-
-    
-
-    /*tx.send(ReplCommand::Mine { miner: node.identifier.clone() }); // Mine the first block
-
-    // Send a coin to a friend
-    tx.send(ReplCommand::Transaction { from:   node.identifier.clone(),
-                                       to:     friend.identifier.clone(),
-                                       amount: 1 });
-    
-    // We mine some more blocks
-    for _ in 0..7 {
-        tx.send(ReplCommand::Mine { miner: node.identifier.clone() });
-    }
-    
-    // Send one more coin to a friend
-    tx.send(ReplCommand::Transaction { from:   node.identifier.clone(),
-                                       to:     friend.identifier.clone(),
-                                       amount: 1 });
-
-    tx.send(ReplCommand::Print);*/
     
     let _ = tx.send(ReplCommand::Quit);
-
-    // Also, use ry to receive Daemon feedback.
 
     println!("Saving aliases...");
     save_aliases(&aliases, "aliases.json".to_owned());
@@ -777,24 +793,22 @@ fn serialize_deserialize() {
     // Create the blockchain, mine a few blocks, make some
     // transactions, save them by mining one more block
     let mut blockchain = Blockchain::new();
-    let node   = Node::new();
-    let friend = Node::new();
-
-    // TODO: I might need to register the nodes here soon
+    let node   = Blockchain::new_identifier();
+    let friend = Blockchain::new_identifier();
     
     for _ in 0..3 {
-        blockchain.mine_block(node.identifier.clone());
+        blockchain.mine_block(node.clone());
     }
-    blockchain.new_transaction(node.identifier.clone(),
-                               friend.identifier.clone(),
+    blockchain.new_transaction(node.clone(),
+                               friend.clone(),
                                1);
-    blockchain.new_transaction(node.identifier.clone(),
-                               friend.identifier.clone(),
+    blockchain.new_transaction(node.clone(),
+                               friend.clone(),
                                2);
-    blockchain.new_transaction(friend.identifier.clone(),
-                               node.identifier.clone(),
+    blockchain.new_transaction(friend.clone(),
+                               node.clone(),
                                1);
-    blockchain.mine_block(node.identifier.clone());
+    blockchain.mine_block(node.clone());
 
     // Serialize to string, then reverse it, then serialize
     // the deserialized

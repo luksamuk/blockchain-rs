@@ -25,66 +25,36 @@ You can also use `cargo run` to execute the program directly.
 ## Usage
 The program itself works as a node for the blockchain, and spawns two concurrent processes, in which one of them is used to handle the blockchain, while the other one handles remote HTTP requests.
 
-Run the program from your favorite console; you can use the argument `--port=XXXX` to specify a port different than 3000 to serve as HTTP listening port, replacing `XXXX` with your desired port number.
+Run the program from your favorite console. Here are some useful command line options:
 
-Once the program runs, you'll be greeted with a prompt, awaiting input. There, you can use the following commands.
+```
+ -h | --help       Shows help prompt, then exit.
+ --port=XXXX       Uses port XXXX as HTTP port, instead of 3000.
+```
 
-### help (WIP)
-Shows a general help prompt with the commands.
+Once the program runs, you'll be greeted with a prompt, awaiting input. There, you can use the following commands on the prompt:
 
-### mine ALIAS-OR-ID
-Mines a new block for the blockchain, then rewards the provided identifier for finding it.
+```
+help                -- Shows help prompt.
+mine                -- [TO-DO] Mines a new block and rewards local node.
+mine ID             -- Mines a new block and rewards ID for it.
+save                -- Saves blockchain to blockchain.json.
+save FILE           -- Saves blockchain to FILE.
+print               -- Dumps blockchain to console as indented JSON.
+dump                -- [TO-DO] Show blockchain statistics.
+node register ADDR  -- Registers an address of format https://127.0.0.1:3000 as a node.
+node new            -- Generates a new local identifier.
+node alias ALIAS ID -- Registers ALIAS as an alias for identifier ID.
+node show           -- Shows registered aliases.
+node save           -- Saves aliases to aliases.json.
+node save FILE      -- Saves aliases to FILE.
+send VAL DEST       -- [TO-DO] Sends a value VAL from a local identifier to DEST.
+send VAL SRC DEST   -- [TO-DO] Sends a value VAL from SRC to DEST.
+resolve             -- Scans through all registered nodes and resolves chain conflicts.
+quit/exit           -- Closes program, saving the blockchain and aliases to default files.
+```
 
-### save FILENAME (WIP)
-Saves the blockchain to said filename. If omitted, saves to default `blockchain.json`.
-
-### print
-Prints the blockchain entirely to the console in a beautifully indented JSON.
-
-### dump (WIP)
-I wonder what this does? Hmmm, we'll discover soon.
-
-### node
-Manages nodes on the network. This command has the following subcommands:
-
-#### register ADDRESS
-Registers an address (format: `http://127.0.0.1:3000`) as a new node to connect in P2P fashion.
-Nodes like this are needed so we can resolve conflicts on our blockchain. The more, the better.
-
-#### new
-Creates a new node on the local network.
-Since this is basically a node-less identifier, I might remove this command soon and come up with a wallet implementation.
-
-#### alias
-Manages node aliases for transactions. I might fork these operations to a wallet command soon.
-This is also comprised of the following commands/arguments:
-
-- NEW-ALIAS IDENTIFIER
-Creates an alias NEW-ALIAS for the identifier IDENTIFIER. This will come in handy for transfers, so you can avoid typing or pasting the same chain of characters over and over again. Think of this as adding an address to a contacts list.
-
-- show
-Shows all registered aliases for this node.
-
-- save FILENAME (WIP)
-Saves aliases to FILENAME or, if omitted, to `aliases.json`.
-Note that these aliases will be saved once you close the application.
-
-### send (WIP)
-Creates a new transaction. Is comprised of two arities:
-
-- AMOUNT DESTINATION (WIP)
-Sends AMOUNT to DESTINATION. DESTINATION can be an alias or an identifier.
-
-- AMOUNT SOURCE DESTINATION (WIP)
-Sends AMOUNT from SOURCE to DESTINATION. I might remove this option depending on how I'm going to handle the difference between nodes and identifiers in the future.
-
-### resolve
-Scans through all registered nodes, using the consensus algorithm, and updates our blockchain.
-
-### quit/exit
-You know what it does.
-This will also save the blockchain to `blockchain.json`.
-
+Please note that the REPL commands above are still subject to change.
 
 ## Other relevant links
 I did not follow those, but they might be a source for consulting soon, since I want to improve this implementation.
