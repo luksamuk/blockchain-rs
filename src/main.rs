@@ -6,6 +6,7 @@ extern crate serde_json;
 extern crate time;
 extern crate crypto;
 extern crate uuid;
+extern crate rust_base58;
 
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
@@ -14,6 +15,7 @@ use std::sync::mpsc;
 use uuid::Uuid;
 use std::time::SystemTime;
 use std::fs::File;
+use rust_base58::{ToBase58, FromBase58};
 
 
 // REPL crates and uses
@@ -820,10 +822,64 @@ fn serialize_deserialize() {
         .expect("Error while serializing the new blockchain");
 
     // Test passes if serialization is equal for both
-    println!("First serialization: {}", serialized);
-    println!("Second serialization: {}", reserialized);
+    //println!("First serialization: {}", serialized);
+    //println!("Second serialization: {}", reserialized);
     
     assert_eq!(serialized, reserialized);
+}
+
+#[test]
+fn dummy_wallet_gen() {
+    // Let's pretend we're creating a public key.
+    let pubkey = Blockchain::new_identifier();
+    println!("Pubkey: {}", pubkey);
+
+    // We perform SHA-256 on it.
+    let sha256step = {
+        let mut hasher = Sha256::new();
+        hasher.input(&pubkey.into_bytes());
+        hasher.result_str()
+    };
+    println!("First SHA-256 step: {}", sha256step);
+
+    // Perform RIPEMD-160 on the hash
+    let ripemd160step = {
+        let mut hasher = crypto::ripemd160::Ripemd160::new();
+        hasher.input(&sha256step.into_bytes());
+        hasher.result_str()
+    };
+
+    // Add version byte to front of hash (00 here is Bitcoin's main net)
+    let ripemd160step = "00".to_owned() + ripemd160step.as_ref();
+
+    println!("RIPEMD-160 step plus version: {}", ripemd160step);
+
+    // Perform two SHA256 on it
+    let sha256step2n3 = {
+        let mut hasher1 = Sha256::new();
+        let mut hasher2 = Sha256::new();
+        hasher1.input(&ripemd160step.clone().into_bytes());
+        hasher2.input(&hasher1.result_str().into_bytes());
+        hasher2.result_str()
+    };
+    println!("SHA-256 steps 2 and 3: {}", sha256step2n3);
+
+    // Get address checksum; first 4 bytes (8 characters) of last step
+    let checksum = String::from(&sha256step2n3[..8]);
+    println!("Checksum: {}", checksum);
+
+    // Add checksum to extended RIPEMD-160 address, generating our
+    // 25-byte binary address.
+    let binaddr = checksum + ripemd160step.as_ref();
+    println!("25-byte binary address: {}", binaddr);
+
+    // Convert to base 58.
+    // This may be incorrect!
+    let address = binaddr.as_bytes().to_base58();
+    println!("Generated address: {}", address);
+    
+    assert_eq!(binaddr,
+               String::from_utf8_lossy(address.from_base58().unwrap().as_ref()));
 }
 
 // TODO: Add daemon test
