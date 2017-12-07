@@ -873,10 +873,15 @@ fn dummy_wallet_gen() {
     let binaddr = checksum + ripemd160step.as_ref();
     println!("25-byte binary address: {}", binaddr);
 
+    assert_eq!(binaddr.len(), 50);
+
+    // Todo: we need to gen a vec of numbers from string pairs of letters.
+    // use i64::from_str_radix(str, 16).
     // Convert to base 58.
     // This may be incorrect!
     let address = binaddr.as_bytes().to_base58();
     println!("Generated address: {}", address);
+
     
     assert_eq!(binaddr,
                String::from_utf8_lossy(address.from_base58().unwrap().as_ref()));
