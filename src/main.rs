@@ -46,6 +46,9 @@ use std::io::{Write, Read};
 
 
 // ----
+// Version
+pub const BLOCKCHAIN_RS_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
 // Help commands
 static HELP_PROMPT: &'static str =
     "help                 -- Shows this prompt.\n\
@@ -590,7 +593,7 @@ fn save_aliases(aliases: &HashMap<String, String>, filename: String) {
 fn main() {
     let mut node_port = "3000".to_owned(); // Default HTTP service port
 
-    println!("blockchain-rs 0.5.0");
+    println!("blockchain-rs {}", BLOCKCHAIN_RS_VERSION);
     println!("Copyright (C) 2017 Lucas Vieira.");
     println!("This program is distributed under the MIT License. Check source code for details.");
     
@@ -888,46 +891,44 @@ fn main() {
                             // Address alias
                             if args.len() > 0 {
                                 let arg0 = String::from(args[0]).to_lowercase();
-                                if args.len() > 1 {
-                                    match arg0.as_ref() {
-                                        "save" => {
-                                            let mut filename = None;
-                                            if args.len() > 2 {
-                                                println!("Please specify only one filename.");
-                                            } else if args.len() == 2 {
-                                                filename = Some(String::from(args[1]));
-                                            } else if args.len() < 2 {
-                                                filename = Some(String::from("aliases.json"));
-                                            }
+                                match arg0.as_ref() {
+                                    "save" => {
+                                        let mut filename = None;
+                                        if args.len() > 2 {
+                                            println!("Please specify only one filename.");
+                                        } else if args.len() == 2 {
+                                            filename = Some(String::from(args[1]));
+                                        } else if args.len() < 2 {
+                                            filename = Some(String::from("aliases.json"));
+                                        }
 
-                                            match filename {
-                                                Some(file) => {
-                                                    save_aliases(&aliases, file.clone());
-                                                    println!("Aliases saved to {}", file);
-                                                },
-                                                _ => {},
-                                            };
-                                        },
-                                        "show" => {
-                                            for (alias, identifier) in &aliases {
-                                                println!("{}: {}", alias, identifier);
-                                            }
-                                        },
-                                        "reg" => {
-                                            if args.len() != 3 {
-                                                println!("Please specify the alias and its address.");
-                                            } else { // alias register ALIAS ADDRESS
-                                                let alias = String::from(args[1]);
-                                                let addr = String::from(args[2]);
+                                        match filename {
+                                            Some(file) => {
+                                                save_aliases(&aliases, file.clone());
+                                                println!("Aliases saved to {}", file);
+                                            },
+                                            _ => {},
+                                        };
+                                    },
+                                    "show" => {
+                                        for (alias, identifier) in &aliases {
+                                            println!("{}: {}", alias, identifier);
+                                        }
+                                    },
+                                    "reg" => {
+                                        if args.len() != 3 {
+                                            println!("Please specify the alias and its address.");
+                                        } else { // alias register ALIAS ADDRESS
+                                            let alias = String::from(args[1]);
+                                            let addr = String::from(args[2]);
 
-                                                // TODO: Verify whether addr is a true base58 address
+                                            // TODO: Verify whether addr is a true base58 address
 
-                                                aliases.insert(alias.clone(), addr.clone());
-                                                println!("Added alias \"{}\" to address {}", alias, addr);
-                                            }
-                                        },
-                                        _ => println!("Unknown command for \"alias\"."),
-                                    }
+                                            aliases.insert(alias.clone(), addr.clone());
+                                            println!("Added alias \"{}\" to address {}", alias, addr);
+                                        }
+                                    },
+                                    _ => println!("Unknown command for \"alias\"."),
                                 }
                             } else {
                                 println!("Please specify what operation to perform with aliases.");
