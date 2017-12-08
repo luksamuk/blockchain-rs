@@ -531,7 +531,6 @@ enum ReplCommand {
     Print,
     Dump,
     RegNode { url: String },
-    //CheckNode { identifier: String },
     GetChain,
     Resolve,
     Quit,
@@ -678,21 +677,6 @@ fn main() {
                     blockchain.nodes.insert(url.clone());
                     let _ = ty.send(Ok("REGISTERED".to_owned()));
                 },
-                // TODO: Change this to verify if it isn't going to make us crash?
-                /*ReplCommand::CheckNode { identifier } => {
-                    let mut exists = false;
-                    for (_, node) in &blockchain.nodes {
-                        if node.identifier == identifier {
-                            exists = true;
-                            break;
-                        }
-                    }
-                    if exists {
-                        let _ = ty.send(Ok("NODE EXISTS".to_owned()));
-                    } else {
-                        let _ = ty.send(Err("NODE DOESN'T EXIST".to_owned()));
-                    }
-                },*/
                 ReplCommand::Resolve => {
                     let changed = blockchain.resolve_conflicts();
                     let _ = match changed {
@@ -824,6 +808,7 @@ fn main() {
                                     },
                                     "show" => {
                                         // Show registered nodes. Ask daemon to do that.
+                                        println!("Not Implemented");
                                     },
                                     _ => println!("Unknown subcommand for \"node\"."),
                                 }
