@@ -35,23 +35,30 @@ Run the program from your favorite console. Here are some useful command line op
 Once the program runs, you'll be greeted with a prompt, awaiting input. There, you can use the following commands on the prompt:
 
 ```
-help                -- Shows help prompt.
-mine                -- [TO-DO] Mines a new block and rewards local node.
-mine ID             -- Mines a new block and rewards ID for it.
-save                -- Saves blockchain to blockchain.json.
-save FILE           -- Saves blockchain to FILE.
-print               -- Dumps blockchain to console as indented JSON.
-dump                -- [TO-DO] Show blockchain statistics.
-node register ADDR  -- Registers an address of format https://127.0.0.1:3000 as a node.
-node new            -- Generates a new local identifier.
-node alias ALIAS ID -- Registers ALIAS as an alias for identifier ID.
-node show           -- Shows registered aliases.
-node save           -- Saves aliases to aliases.json.
-node save FILE      -- Saves aliases to FILE.
-send VAL DEST       -- [TO-DO] Sends a value VAL from a local identifier to DEST.
-send VAL SRC DEST   -- [TO-DO] Sends a value VAL from SRC to DEST.
-resolve             -- Scans through all registered nodes and resolves chain conflicts.
-quit/exit           -- Closes program, saving the blockchain and aliases to default files.
+help                 -- Shows help prompt.
+mine                 -- Mines a new block and rewards local node.
+mine ID              -- Mines a new block and rewards ID for it.
+save                 -- Saves blockchain to blockchain.json.
+save FILE            -- Saves blockchain to FILE.
+print                -- Dumps blockchain to console as indented JSON.
+dump                 -- [TO-DO] Show blockchain statistics.
+alias reg ALIAS ADDR -- Registers ALIAS as an alias for identifier ID.
+alias show           -- Shows registered aliases.
+alias save           -- Saves aliases to aliases.json.
+alias save FILE      -- Saves aliases to FILE.
+node reg ADDR        -- Registers an address of format https://127.0.0.1:3000 as a node.
+node del ADDR        -- [TO-DO] Deletes an address from nodes.
+node show            -- [TO-DO] Shows registered nodes.
+send VAL DEST        -- [TO-DO] Sends a value VAL from a local identifier to DEST.
+send VAL SRC DEST    -- [TO-DO] Sends a value VAL from SRC to DEST.
+resolve              -- Scans through all registered nodes and resolves chain conflicts.
+wallet new           -- [TO-DO] Creates a new wallet.
+wallet load FILE     -- [TO-DO] Loads wallet saved on FILE.
+wallet save          -- Saves loaded wallet to wallet.json.
+wallet save FILE     -- Saves loaded wallet to FILE.
+wallet show          -- Shows addresses of loaded wallet.
+wallet balance       -- Processes blockchain and shows balance for currently loaded wallet.
+quit/exit            -- Closes program, saving the blockchain and aliases to default files.
 ```
 
 Please note that the REPL commands above are still subject to change.

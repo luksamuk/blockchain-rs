@@ -23,6 +23,7 @@ extern crate rustyline;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
+use std::collections::HashSet;
 use std::collections::HashMap;
 
 
@@ -39,38 +40,41 @@ use std::io::{Write, Read};
 
 
 // TODO
-// mine => implement for default address (if wallet exists, address #1)
-// mine ID             => mine ADDRESS
-// node new            => wallet new
-// node alias ALIAS ID => wallet alias ALIAS ID
-// node show           => wallet show
-// node save           => wallet save
-// node save FILE      => wallet save FILE
-// wallet balance
-// wallet addresses
+// node new            => wallet new (???? or maybe even remove)
+// node del (also change nodes to hashset. nodes will be just addresses)
+// node show
 
 
 // ----
 // Help commands
 static HELP_PROMPT: &'static str =
-    "help                -- Shows this prompt.\n\
-     mine                -- [TO-DO] Mines a new block and rewards local node.\n\
-     mine ID             -- Mines a new block and rewards ID for it.\n\
-     save                -- Saves blockchain to blockchain.json.\n\
-     save FILE           -- Saves blockchain to FILE.\n\
-     print               -- Dumps blockchain to console as indented JSON.\n\
-     dump                -- [TO-DO] Show blockchain statistics.\n\
-     node register ADDR  -- Registers an address of format https://127.0.0.1:3000 as a node.\n\
-     node new            -- Generates a new local identifier.\n\
-     node alias ALIAS ID -- Registers ALIAS as an alias for identifier ID.\n\
-     node show           -- Shows registered aliases.\n\
-     node save           -- Saves aliases to aliases.json.\n\
-     node save FILE      -- Saves aliases to FILE.\n\
-     send VAL DEST       -- [TO-DO] Sends a value VAL from a local identifier to DEST.\n\
-     send VAL SRC DEST   -- [TO-DO] Sends a value VAL from SRC to DEST.\n\
-     resolve             -- Scans through all registered nodes and resolves chain conflicts.\n\
-     quit/exit           -- Closes program, saving the blockchain and aliases to default files.";
+    "help                 -- Shows this prompt.\n\
+     mine                 -- Mines a new block and rewards local node.\n\
+     mine ID              -- Mines a new block and rewards ID for it.\n\
+     save                 -- Saves blockchain to blockchain.json.\n\
+     save FILE            -- Saves blockchain to FILE.\n\
+     print                -- Dumps blockchain to console as indented JSON.\n\
+     dump                 -- [TO-DO] Show blockchain statistics.\n\
+     alias reg ALIAS ADDR -- Registers ALIAS as an alias for identifier ID.\n\
+     alias show           -- Shows registered aliases.\n\
+     alias save           -- Saves aliases to aliases.json.\n\
+     alias save FILE      -- Saves aliases to FILE.\n\
+     node reg ADDR        -- Registers an address of format https://127.0.0.1:3000 as a node.\n\
+     node del ADDR        -- [TO-DO] Deletes an address from nodes.\n\
+     node show            -- [TO-DO] Shows registered nodes.\n\
+     send VAL DEST        -- [TO-DO] Sends a value VAL from a local identifier to DEST.\n\
+     send VAL SRC DEST    -- [TO-DO] Sends a value VAL from SRC to DEST.\n\
+     resolve              -- Scans through all registered nodes and resolves chain conflicts.\n\
+     wallet new           -- [TO-DO] Creates a new wallet.\n\
+     wallet load FILE     -- [TO-DO] Loads wallet saved on FILE.\n\
+     wallet save          -- Saves loaded wallet to wallet.json.\n\
+     wallet save FILE     -- Saves loaded wallet to FILE.\n\
+     wallet show          -- Shows addresses of loaded wallet.\n\
+     wallet balance       -- Processes blockchain and shows balance for currently loaded wallet.\n\
+     quit/exit            -- Closes program, saving the blockchain and aliases to default files.";
 
+// DEPRECATED:
+// node new             -- Generates a new local identifier.\n\
 
 // ----
 
@@ -111,7 +115,7 @@ struct Block {
 struct Blockchain {
     chain: Vec<Block>,
     current_transactions: Vec<Transaction>,
-    nodes: HashMap<String, Node>,
+    nodes: HashSet<String>,
 }
 
 impl Blockchain {
@@ -120,7 +124,7 @@ impl Blockchain {
         let mut blockchain = Blockchain {
             chain:                vec![],
             current_transactions: vec![],
-            nodes:                HashMap::new(),
+            nodes:                HashSet::new(),
         };
         // Create genesis block
         blockchain.new_block(100, Some(String::from("1")));
@@ -140,7 +144,7 @@ impl Blockchain {
                 match f.read_to_string(&mut text) {
                     Ok(_) => Blockchain::from_str(&text),
                     Err(_) => {
-                        println!("Cannor read blockchain file text. Creating a new one.");
+                        println!("Cannot read blockchain file text. Creating a new one.");
                         Blockchain::new()
                     }
                 }
@@ -306,8 +310,8 @@ impl Blockchain {
         let mut new_chain: Option<Vec<Block>> = None;
 
         // Grab and verify the chains from all nodes on the network
-        for (node, _) in &self.nodes {
-            if node != "local" {
+        for node in &self.nodes {
+            if node != "local" { // TODO: I don't need to check this anymore!
                 let proto_uri = format!("{}/chain", node);
                 //println!("Fetching chain from {}", proto_uri);
 
@@ -437,11 +441,14 @@ impl Wallet {
         wallet
     }
 
-    fn calculate_balances(&mut self, blockchain: &Blockchain) {
+    
+
+    fn calculate_balances(&mut self, chain: &Vec<Block>) {
         // If we have more blocks than when last checked, calculate
-        if blockchain.chain.len() > self.last_block_checked {
-            for i in self.last_block_checked + 1 .. blockchain.chain.len() {
-                let block = &blockchain.chain[i];
+        let last_chain_idx = chain.last().unwrap().index as usize;
+        if last_chain_idx > self.last_block_checked {
+            for i in self.last_block_checked .. last_chain_idx {
+                let block = &chain[i];
                 let mut n = 0;
                 for addr in &self.addresses {
                     for transaction in &block.transactions {
@@ -454,7 +461,53 @@ impl Wallet {
                     n += 1;
                 }
             }
+            self.last_block_checked = last_chain_idx;
         }
+    }
+
+    // Load wallet from file
+    fn from_file(filename: String) -> Wallet {
+        let f = File::open(filename);
+        match f {
+            Err(_) => {
+                println!("Cannot read wallet file. Creating a new one.");
+                Wallet::new()
+            },
+            Ok(mut f) => {
+                let mut text = String::new();
+                match f.read_to_string(&mut text) {
+                    Ok(_) => Wallet::from_str(&text),
+                    Err(_) => {
+                        println!("Cannot read wallet file text. Creating a new one.");
+                        Wallet::new()
+                    }
+                }
+            }
+        }
+    }
+
+    // Load wallet from string
+    fn from_str(string: &String) -> Wallet {
+        let deserialized = serde_json::from_str(string);
+        match deserialized {
+            Ok(wallet) => wallet,
+            Err(_)         => {
+                println!("Cannot parse wallet. Creating a new one.");
+                Wallet::new()
+            }
+        }
+    }
+
+    // Save wallet to file
+    fn to_file(&self, filename: String) {
+        let serialized = serde_json::to_string_pretty(self)
+            .expect("Unable to serialize wallet!");
+        let f = File::create(filename);
+        match f {
+            Err(_) => println!("Unable to create file!"),
+            Ok(mut f) => f.write_all(serialized.as_bytes())
+                .expect("Unable to write wallet to file!"),
+        };
     }
 }
 
@@ -474,9 +527,9 @@ enum ReplCommand {
     Save { filename: String },
     Print,
     Dump,
-    NewNode,
     RegNode { url: String },
-    CheckNode { identifier: String },
+    //CheckNode { identifier: String },
+    GetChain,
     Resolve,
     Quit,
 
@@ -584,7 +637,6 @@ fn main() {
     
 
     /* ===== DAEMON ===== */
-    let my_node_name = String::from("local");
     let daemon = thread::spawn(move || {
         // Create blockchain
         let mut blockchain = Blockchain::from_file("blockchain.json".to_owned());
@@ -619,16 +671,12 @@ fn main() {
                     blockchain.to_file(filename.clone());
                     let _ = ty.send(Ok("FILE SAVED".to_owned()));
                 },
-                ReplCommand::NewNode => {
-                    let identifier = Blockchain::new_identifier();
-                    blockchain.nodes.insert(my_node_name.clone(), Node { identifier: identifier.clone() });
-                    let _ = ty.send(Ok(identifier.clone()));
-                },
                 ReplCommand::RegNode { url } => {
-                    blockchain.nodes.insert(url.clone(), Node { identifier: String::new() });
+                    blockchain.nodes.insert(url.clone());
                     let _ = ty.send(Ok("REGISTERED".to_owned()));
                 },
-                ReplCommand::CheckNode { identifier } => {
+                // TODO: Change this to verify if it isn't going to make us crash?
+                /*ReplCommand::CheckNode { identifier } => {
                     let mut exists = false;
                     for (_, node) in &blockchain.nodes {
                         if node.identifier == identifier {
@@ -641,13 +689,17 @@ fn main() {
                     } else {
                         let _ = ty.send(Err("NODE DOESN'T EXIST".to_owned()));
                     }
-                },
+                },*/
                 ReplCommand::Resolve => {
                     let changed = blockchain.resolve_conflicts();
                     let _ = match changed {
                         true  => ty.send(Ok("CHAIN UPDATED".to_owned())),
                         false => ty.send(Ok("CHAIN UP-TO-DATE".to_owned())),
                     };
+                },
+                ReplCommand::GetChain => {
+                    let chain_serialized: String = serde_json::to_string(&blockchain.chain).unwrap();
+                    let _ = ty.send(Ok(chain_serialized.clone()));
                 },
                 ReplCommand::HttpGetChain => {
                     let chain_serialized: String = serde_json::to_string(&blockchain.chain).unwrap();
@@ -708,7 +760,7 @@ fn main() {
     // Node aliases
     #[derive(Serialize, Deserialize)]
     let mut aliases = load_aliases("aliases.json".to_owned());
-    let mut wallet  = Wallet::new();
+    let mut wallet  = Wallet::from_file("wallet.json".to_owned());
 
     // Await daemon response
     println!("Daemon started: {}", ry.recv().unwrap().unwrap());
@@ -744,38 +796,13 @@ fn main() {
                             } else {
                                 let arg0 = String::from(args[0]).to_lowercase();
                                 match arg0.as_ref() {
-                                    "new" => {
+                                    /*"new" => {
                                         // 1. Request node creation from blockchain
                                         let _ = tx.send(ReplCommand::NewNode);
                                         // 2. Return identifier
                                         println!("New node created: {}", ry.recv().unwrap().unwrap());
-                                    },
-                                    "alias" => {
-                                        // Node alias
-                                        if args.len() == 2 && args[1].to_lowercase() == "show" {
-                                            for (alias, identifier) in &aliases {
-                                                println!("{}: {}", alias, identifier);
-                                            }
-                                        } else if args.len() != 3 { // node alias ALIAS IDENTIFIER
-                                            println!("Please specify the node alias and its identifier.");
-                                        } else {
-                                            let alias = String::from(args[1]);
-                                            let identifier = String::from(args[2]);
-
-                                            let _ = tx.send(ReplCommand::CheckNode { identifier: identifier.clone() });
-
-                                            // 1. Verify node existance in blockchain
-                                            match ry.recv().unwrap() {
-                                                Ok(_) => {
-                                                    // 2. Add alias
-                                                    aliases.insert(alias.clone(), identifier.clone());
-                                                    println!("Added alias \"{}\" to identifier {}", alias, identifier);
-                                                },
-                                                Err(msg) => println!("Node alias registration error: {}", msg),
-                                            }
-                                        }
-                                    },
-                                    "register" => {
+                                    },*/
+                                    "reg" => {
                                         if args.len() != 2 {
                                             println!("Please specify an address for the node.");
                                         } else {
@@ -792,57 +819,40 @@ fn main() {
                                             }
                                         }
                                     },
-                                    "save" => {
-                                        let mut filename = None;
-                                        if args.len() > 2 {
-                                            println!("Please specify only one filename.");
-                                        } else if args.len() == 2 {
-                                            filename = Some(String::from(args[1]));
-                                        } else if args.len() < 2 {
-                                            filename = Some(String::from("aliases.json"));
-                                        }
-
-                                        match filename {
-                                            Some(file) => {
-                                                save_aliases(&aliases, file.clone());
-                                                println!("Aliases saved to {}", file);
-                                            },
-                                            _ => {}
-                                        };
+                                    "show" => {
+                                        // Show registered nodes. Ask daemon to do that.
                                     },
                                     _ => println!("Unknown subcommand for \"node\"."),
                                 }
                             }
                         },
                         "mine" => {
+                            let mut identifier = String::new();
                             if args.len() != 1 {
-                                println!("Please specify the alias or identifier to be rewarded for mining.");
+                                println!("Assuming mining operation for current wallet's Address #0.");
+                                identifier = wallet.addresses[0].clone();
                             } else {
                                 let miner = String::from(args[0]);
-                                let mut identifier = String::new();
-                                
-                                match aliases.get(&miner) {
-                                    Some(id) => identifier = id.clone(),
-                                    None => {
-                                        let _ = tx.send(ReplCommand::CheckNode { identifier: miner.clone() });
-                                        match ry.recv().unwrap() {
-                                            Ok(_) => identifier = miner.clone(),
-                                            Err(_) => println!("No alias nor registered identifier \"{}\" was found.", miner),
-                                        };
-                                    },
-                                };
+                                identifier = 
+                                    match aliases.get(&miner) {
+                                        Some(id) => id.clone(),
+                                        None => {
+                                            miner.clone()
+                                        },
+                                    };
+                            }
                                 
 
-                                if identifier.len() > 0 {
-                                    println!("Starting block mining process...");
-                                    let _ = tx.send(ReplCommand::Mine { miner: identifier.clone() });
-                                    println!("Awaiting block mining completion...");
-                                    match ry.recv().unwrap() {
-                                        Ok(status) => println!("Mined block successfully: {}", status),
-                                        Err(status) => println!("Block mining error: {}", status),
-                                    };
-                                }
+                            if identifier.len() > 0 {
+                                println!("Starting block mining process...");
+                                let _ = tx.send(ReplCommand::Mine { miner: identifier.clone() });
+                                println!("Awaiting block mining completion...");
+                                match ry.recv().unwrap() {
+                                    Ok(status) => println!("Mined block successfully: {}", status),
+                                    Err(status) => println!("Block mining error: {}", status),
+                                };
                             }
+                            
                         },
                         "print" => {
                             println!("Requesting blockchain in readable format...");
@@ -874,6 +884,100 @@ fn main() {
                                 _ => {}
                             };
                         },
+                        "alias" => {
+                            // Address alias
+                            if args.len() > 0 {
+                                let arg0 = String::from(args[0]).to_lowercase();
+                                if args.len() > 1 {
+                                    match arg0.as_ref() {
+                                        "save" => {
+                                            let mut filename = None;
+                                            if args.len() > 2 {
+                                                println!("Please specify only one filename.");
+                                            } else if args.len() == 2 {
+                                                filename = Some(String::from(args[1]));
+                                            } else if args.len() < 2 {
+                                                filename = Some(String::from("aliases.json"));
+                                            }
+
+                                            match filename {
+                                                Some(file) => {
+                                                    save_aliases(&aliases, file.clone());
+                                                    println!("Aliases saved to {}", file);
+                                                },
+                                                _ => {},
+                                            };
+                                        },
+                                        "show" => {
+                                            for (alias, identifier) in &aliases {
+                                                println!("{}: {}", alias, identifier);
+                                            }
+                                        },
+                                        "reg" => {
+                                            if args.len() != 3 {
+                                                println!("Please specify the alias and its address.");
+                                            } else { // alias register ALIAS ADDRESS
+                                                let alias = String::from(args[1]);
+                                                let addr = String::from(args[2]);
+
+                                                // TODO: Verify whether addr is a true base58 address
+
+                                                aliases.insert(alias.clone(), addr.clone());
+                                                println!("Added alias \"{}\" to address {}", alias, addr);
+                                            }
+                                        },
+                                        _ => println!("Unknown command for \"alias\"."),
+                                    }
+                                }
+                            } else {
+                                println!("Please specify what operation to perform with aliases.");
+                            }
+                        },
+                        "wallet" => {
+                            if args.len() < 1 {
+                                println!("Please specify what to do with the current wallet.");
+                            } else {
+                                let arg0 = String::from(args[0]).to_lowercase();
+                                match arg0.as_ref() {
+                                    //"new" => {},
+                                    //"load" => {},
+                                    "show" => {
+                                        println!("Addresses:");
+                                        for addr in &wallet.addresses {
+                                            println!("{}", addr);
+                                        }
+                                        println!("\nTotal balance: ${}.\nThere may be unconfirmed transactions, run `wallet balance` to update.",
+                                                 wallet.balances
+                                                 .iter()
+                                                 .fold(0, |acc, &x| acc + x));
+                                    },
+                                    "save" => {
+                                        let mut filename = String::new();
+                                        if args.len() < 2 {
+                                            filename = "wallet.json".to_owned();
+                                        } else if args.len() >= 2 {
+                                            filename = String::from(args[1]);
+                                        }
+                                        wallet.to_file(filename.clone());
+                                        println!("Saved wallet to {}.", filename);
+                                    },
+                                    "balance" => {
+                                        // Request chain from daemon
+                                        println!("Requesting blockchain from local daemon...");
+                                        let _ = tx.send(ReplCommand::GetChain);
+                                        let chain_serialized = ry.recv().unwrap().unwrap();
+                                        let chain: Vec<Block> = serde_json::from_str(&chain_serialized).unwrap();
+                                        
+                                        println!("Updating balance...");
+                                        wallet.calculate_balances(&chain);
+
+                                        println!("Updated balance: ${}",
+                                                 wallet.balances.iter().fold(0, |acc, &x| acc + x));
+                                    },
+                                    _ => println!("Unknown subcommand for \"wallet\"."),
+                                }
+                            }
+                        },
                         "help" => {
                             println!("Useful commands:\n{}", HELP_PROMPT);
                         },
@@ -903,6 +1007,8 @@ fn main() {
 
     println!("Saving aliases...");
     save_aliases(&aliases, "aliases.json".to_owned());
+    println!("Saving wallet...");
+    wallet.to_file("wallet.json".to_owned());
     let _ = daemon.join();
 }
 
@@ -1018,7 +1124,7 @@ fn wallet_gen() {
     blockchain.mine_block(wallet.addresses[0].clone());
 
     // Checking balance...
-    wallet.calculate_balances(&blockchain);
+    wallet.calculate_balances(&blockchain.chain);
 
     // We expect:
     // Address #1 will have $2 (+ one unconfirmed mining bounty, which will not be shown)
@@ -1041,5 +1147,3 @@ fn wallet_gen() {
                  transaction.sender, transaction.recipient, transaction.amount);
     }
 }
-
-// TODO: Add daemon test
