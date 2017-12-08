@@ -38,6 +38,17 @@ use url::Url;
 use std::io::{Write, Read};
 
 
+// TODO
+// mine => implement for default address (if wallet exists, address #1)
+// mine ID             => mine ADDRESS
+// node new            => wallet new
+// node alias ALIAS ID => wallet alias ALIAS ID
+// node show           => wallet show
+// node save           => wallet save
+// node save FILE      => wallet save FILE
+// wallet balance
+// wallet addresses
+
 
 // ----
 // Help commands
@@ -60,18 +71,30 @@ static HELP_PROMPT: &'static str =
      resolve             -- Scans through all registered nodes and resolves chain conflicts.\n\
      quit/exit           -- Closes program, saving the blockchain and aliases to default files.";
 
+
 // ----
 
-
-#[derive(Serialize, Deserialize, Clone, Hash)]
-struct Transaction {
-    sender: String,
-    recipient: String,
-    amount: u64,
+// Each node is indexed in the blockchain and represents a registered
+// node on the network.
+// This structure will contain the node data required for transactions.
+#[derive(Serialize, Deserialize, Clone)]
+struct Node {
+    identifier: String,
 }
 
 // ----
 
+// Represents a transaction on the blockchain.
+#[derive(Serialize, Deserialize, Clone, Hash)]
+struct Transaction {
+    sender: String,
+    recipient: String,
+    amount: i64,
+}
+
+// ----
+
+// Represents a single block on the blockchain.
 #[derive(Serialize, Deserialize, Clone, Hash)]
 struct Block {
     index: u64,
@@ -83,6 +106,7 @@ struct Block {
 
 // ----
 
+// Represents the blockchain itself.
 #[derive(Serialize, Deserialize, Clone)]
 struct Blockchain {
     chain: Vec<Block>,
@@ -176,7 +200,7 @@ impl Blockchain {
     // recipient: Address of recipient
     // amount: Amount of cash
     // Return: Index of block which will hold this transaction
-    fn new_transaction(&mut self, sender: String, recipient: String, amount: u64) -> u64 {
+    fn new_transaction(&mut self, sender: String, recipient: String, amount: i64) -> u64 {
         self.current_transactions.push(Transaction {
             sender: sender.clone(),
             recipient: recipient.clone(),
@@ -389,18 +413,53 @@ impl Blockchain {
     }
 }
 
-
-// Each node is indexed in the blockchain and represents a registered
-// node on the network.
-// This structure will contain the node data required for transactions.
-#[derive(Serialize, Deserialize, Clone)]
-struct Node {
-    identifier: String,
-}
-
 // ---
 
+// Represents a wallet.
+// By default, we'll only use a single wallet.
+#[derive(Serialize, Deserialize, Clone)]
+struct Wallet {
+    addresses: Vec<String>,
+    balances:  Vec<i64>,
+    last_block_checked: usize,
+}
 
+impl Wallet {
+    fn new() -> Wallet {
+        let mut wallet = Wallet { addresses: vec![], balances: vec![], last_block_checked: 1, };
+        // We'll be using only 5 addresses per wallet, we don't need more for now.
+        for _ in 0..5 {
+            let identifier = Blockchain::new_identifier();
+            let bin_addr = Blockchain::generate_address_bin(&identifier);
+            wallet.addresses.push(Blockchain::generate_address(&bin_addr));
+            wallet.balances.push(0);
+        }
+        wallet
+    }
+
+    fn calculate_balances(&mut self, blockchain: &Blockchain) {
+        // If we have more blocks than when last checked, calculate
+        if blockchain.chain.len() > self.last_block_checked {
+            for i in self.last_block_checked + 1 .. blockchain.chain.len() {
+                let block = &blockchain.chain[i];
+                let mut n = 0;
+                for addr in &self.addresses {
+                    for transaction in &block.transactions {
+                        if transaction.recipient == *addr {
+                            self.balances[n] += transaction.amount;
+                        } else if transaction.sender == *addr {
+                            self.balances[n] -= transaction.amount;
+                        }
+                    }
+                    n += 1;
+                }
+            }
+        }
+    }
+}
+
+
+// ---
 
 // ------------------------
 // The original tutorial used Flask with a web interface for the operations.
@@ -410,7 +469,7 @@ struct Node {
 
 // Signal sending enum
 enum ReplCommand {
-    Transaction { from: String, to: String, amount: u64 },
+    Transaction { from: String, to: String, amount: i64 },
     Mine { miner: String },
     Save { filename: String },
     Print,
@@ -649,6 +708,7 @@ fn main() {
     // Node aliases
     #[derive(Serialize, Deserialize)]
     let mut aliases = load_aliases("aliases.json".to_owned());
+    let mut wallet  = Wallet::new();
 
     // Await daemon response
     println!("Daemon started: {}", ry.recv().unwrap().unwrap());
@@ -899,7 +959,7 @@ fn serialize_deserialize() {
 }
 
 #[test]
-fn dummy_wallet_gen() {
+fn address_gen() {
     // Let's pretend we're creating a public key.
     // JUST SO YOU KNOW! THIS IS NOTHING MORE THAN
     // AN IDENTIFIER!
@@ -922,6 +982,64 @@ fn dummy_wallet_gen() {
     println!("Binary address #2: {}", binaddr2);
     
     assert_eq!(binaddr, binaddr2);
+}
+
+#[test]
+fn wallet_gen() {
+    // We generate a wallet and test it.
+    let mut wallet = Wallet::new();
+    println!("Generated wallet");
+
+    // We create a blockchain
+    let mut blockchain = Blockchain::new();
+    
+    // Mine seven blocks for first address
+    for i in 0..7 {
+        println!("Mining block #{}, rewarding $1 to address #1", i + 1);
+        blockchain.mine_block(wallet.addresses[0].clone());
+    }
+
+    // First address is generous and will give 1 currency to other addresses
+    for i in 1..wallet.addresses.len() {
+        println!("Address #1 will send 1 currency to address #{}", i + 1);
+        blockchain.new_transaction(wallet.addresses[0].clone(),
+                                   wallet.addresses[i].clone(),
+                                   1);
+    }
+
+    // First address is specially fond of address #3 and will give it two more
+    println!("Address #1 will send 1 currency to address #3");
+    blockchain.new_transaction(wallet.addresses[0].clone(),
+                               wallet.addresses[2].clone(),
+                               1);
+
+    // Mine a new block to confirm changes
+    println!("Mining new block for #1 to confirm previous transactions...");
+    blockchain.mine_block(wallet.addresses[0].clone());
+
+    // Checking balance...
+    wallet.calculate_balances(&blockchain);
+
+    // We expect:
+    // Address #1 will have $2 (+ one unconfirmed mining bounty, which will not be shown)
+    // Address #3 will have $2
+    // Everyone else gets $1
+    assert_eq!(wallet.balances[0], 2);
+    assert_eq!(wallet.balances[1], 1);
+    assert_eq!(wallet.balances[2], 2);
+    assert_eq!(wallet.balances[3], 1);
+    assert_eq!(wallet.balances[4], 1);
+
+    // TODO: Check balance again after one more round
+
+    for i in 0..wallet.addresses.len() {
+        println!("Address #{}: {}, Balance: ${}", i + 1, wallet.addresses[i], wallet.balances[i]);
+    }
+    println!("Unconfirmed transactions:");
+    for transaction in &blockchain.current_transactions {
+        println!("Sender: {}, Recipient: {}, Amount: ${}",
+                 transaction.sender, transaction.recipient, transaction.amount);
+    }
 }
 
 // TODO: Add daemon test
