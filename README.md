@@ -10,6 +10,18 @@ Please mind that I'm not actually paying attention to the shared asset -- here p
 
 This blockchain implementation is largely based on [this article from website HackerNoon](https://hackernoon.com/learn-blockchains-by-building-one-117428612f46), however, I've rewritten it in Rust in the way I could. Plus, since I couldn't rely on Flask, I tried to take the multithreaded approach with a CLI interface of sorts, and manually handling HTTP requests from another thread.
 
+## What does it do?
+I have set some goals for this project. Although this is probably not the best implementation of a blockchain, I aim to
+
+- Provide a basic implementation for a blockchain, not worrying about security since it is being done for educational purposes;
+- Although there is almost no focus on security, I may implement some security measures here and there to learn about them;
+- The blockchain will be able to sync with remote nodes;
+- Simple wallets can be generated for testing purposes, to test mining and transactions;
+- Some algorithms may follow some standards, but not entirely. For example, as per today (12/8/2017), the wallets are a set of five addresses, generated much like v1 of Bitcoin, or at least how it is described on the wiki (see links below). However, the seed for address generation is an UUID instead of a public key. Since generating the pair requires a few security considerations for doing it right, I just didn't do it for now, since I really don't care about it right now;
+- Interact with the blockchain from a very basic HTTP protocol, mostly used for consensus only;
+- Interact with the blockchain using a console interface, a REPL;
+- Try to follow the Rust guidelines and good borrow checker practices, even though I might write a lot of ugly, spaghetti code here.
+
 ## Compile
 Since this is a Rust program, you'll find no difficulty building it if you have Cargo installed.
 
@@ -68,6 +80,7 @@ I did not follow those, but they might be a source for consulting soon, since I 
 - [Build Your Own Blockchain](http://ecomunsing.com/build-your-own-blockchain)
 - [A Blockchain in 200 Lines of Code](https://medium.com/@lhartikk/a-blockchain-in-200-lines-of-code-963cc1cc0e54)
 - [Mastering Blockchain, a Packt eBook. (It was free when I got this link!)](https://www.packtpub.com/packt/offers/free-learning)
+- [Technical background of version 1 Bitcoin addresses](https://en.bitcoin.it/wiki/Technical_background_of_version_1_Bitcoin_addresses)
 
 
 ## License
