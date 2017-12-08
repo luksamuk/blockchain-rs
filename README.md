@@ -75,8 +75,9 @@ quit/exit            -- Closes program, saving the blockchain and aliases to def
 
 Please note that the REPL commands above are still subject to change.
 
-## Other relevant links
-I did not follow those, but they might be a source for consulting soon, since I want to improve this implementation.
+## Relevant links
+These are the resources I followed to build this (I might have skipped some of them):
+- [Learn Blockchains by building one (this article inspired this repository)](https://hackernoon.com/learn-blockchains-by-building-one-117428612f46)
 - [Build Your Own Blockchain](http://ecomunsing.com/build-your-own-blockchain)
 - [A Blockchain in 200 Lines of Code](https://medium.com/@lhartikk/a-blockchain-in-200-lines-of-code-963cc1cc0e54)
 - [Mastering Blockchain, a Packt eBook. (It was free when I got this link!)](https://www.packtpub.com/packt/offers/free-learning)
