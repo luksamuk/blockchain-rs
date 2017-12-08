@@ -317,6 +317,76 @@ impl Blockchain {
             None => false
         }
     }
+
+    // EXTRA: Generate a 25-byte binary address from an identifier.
+    // Notice that the identifier can be any string here. You should use
+    // a pubkey instead of the dumb hashing I use on this example.
+    // Also, this is the algorithm described for Bitcoin; i just wanted
+    // to have a good-looking address, after all.
+    fn generate_address_bin(identifier: &String) -> String {
+        // We perform SHA-256 on the pubkey, which is our identifier.
+        let sha256step = {
+            let mut hasher = Sha256::new();
+            hasher.input(&identifier.clone().into_bytes());
+            hasher.result_str()
+        };
+        //println!("First SHA-256 step: {}", sha256step);
+
+        // Perform RIPEMD-160 on the hash
+        let ripemd160step = {
+            let mut hasher = crypto::ripemd160::Ripemd160::new();
+            hasher.input(&sha256step.into_bytes());
+            hasher.result_str()
+        };
+
+        // Add version byte to front of hash (00 here is Bitcoin's main net,
+        // so we'll just do the same)
+        let ripemd160step = "00".to_owned() + ripemd160step.as_ref();
+
+        //println!("RIPEMD-160 step plus version: {}", ripemd160step);
+
+        // Perform two SHA256 on it
+        let sha256step2n3 = {
+            let mut hasher1 = Sha256::new();
+            let mut hasher2 = Sha256::new();
+            hasher1.input(&ripemd160step.clone().into_bytes());
+            hasher2.input(&hasher1.result_str().into_bytes());
+            hasher2.result_str()
+        };
+        //println!("SHA-256 steps 2 and 3: {}", sha256step2n3);
+
+        // Get address checksum; first 4 bytes (8 characters) of last step
+        let checksum = String::from(&sha256step2n3[..8]);
+        //println!("Checksum: {}", checksum);
+
+        // Add checksum to extended RIPEMD-160 address, generating our
+        // 25-byte binary address.
+        // So this is already our binary address.
+        checksum + ripemd160step.as_ref()
+    }
+
+    // EXTRA: Generate a cute address from our binary address.
+    fn generate_address(bin_addr: &String) -> String {
+        assert_eq!(bin_addr.len(), 50);
+        // We need to gen a vec of numbers from string pairs of letters,
+        // then convert to base 58.
+        let mut binvec = vec![];
+
+        for i in 0..25 {
+            let hex = &bin_addr[i*2..(i*2)+2];
+            binvec.push(i64::from_str_radix(hex, 16).unwrap() as u8);
+        }
+
+        binvec.to_base58()
+    }
+
+    fn generate_binaddr_from(address: &String) -> String {
+        let binvec2: Vec<_>  = address.from_base58().unwrap();
+        let binaddr2str: Vec<String> = binvec2.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        binaddr2str.join("")
+    }
 }
 
 
@@ -831,60 +901,27 @@ fn serialize_deserialize() {
 #[test]
 fn dummy_wallet_gen() {
     // Let's pretend we're creating a public key.
+    // JUST SO YOU KNOW! THIS IS NOTHING MORE THAN
+    // AN IDENTIFIER!
+    // I say it's a pubkey here, but it really isn't.
+    // I won't be implementing
     let pubkey = Blockchain::new_identifier();
     println!("Pubkey: {}", pubkey);
 
-    // We perform SHA-256 on it.
-    let sha256step = {
-        let mut hasher = Sha256::new();
-        hasher.input(&pubkey.into_bytes());
-        hasher.result_str()
-    };
-    println!("First SHA-256 step: {}", sha256step);
+    // Generate a cute 25-byte binary address.
+    let binaddr = Blockchain::generate_address_bin(&pubkey);
+    println!("Binary address #1: {}", binaddr);
 
-    // Perform RIPEMD-160 on the hash
-    let ripemd160step = {
-        let mut hasher = crypto::ripemd160::Ripemd160::new();
-        hasher.input(&sha256step.into_bytes());
-        hasher.result_str()
-    };
-
-    // Add version byte to front of hash (00 here is Bitcoin's main net)
-    let ripemd160step = "00".to_owned() + ripemd160step.as_ref();
-
-    println!("RIPEMD-160 step plus version: {}", ripemd160step);
-
-    // Perform two SHA256 on it
-    let sha256step2n3 = {
-        let mut hasher1 = Sha256::new();
-        let mut hasher2 = Sha256::new();
-        hasher1.input(&ripemd160step.clone().into_bytes());
-        hasher2.input(&hasher1.result_str().into_bytes());
-        hasher2.result_str()
-    };
-    println!("SHA-256 steps 2 and 3: {}", sha256step2n3);
-
-    // Get address checksum; first 4 bytes (8 characters) of last step
-    let checksum = String::from(&sha256step2n3[..8]);
-    println!("Checksum: {}", checksum);
-
-    // Add checksum to extended RIPEMD-160 address, generating our
-    // 25-byte binary address.
-    let binaddr = checksum + ripemd160step.as_ref();
-    println!("25-byte binary address: {}", binaddr);
-
-    assert_eq!(binaddr.len(), 50);
-
-    // Todo: we need to gen a vec of numbers from string pairs of letters.
-    // use i64::from_str_radix(str, 16).
-    // Convert to base 58.
-    // This may be incorrect!
-    let address = binaddr.as_bytes().to_base58();
-    println!("Generated address: {}", address);
-
+    // Now generate a cute address for a fictional wallet.
+    let address = Blockchain::generate_address(&binaddr);
+    println!("Address: {}", address);
     
-    assert_eq!(binaddr,
-               String::from_utf8_lossy(address.from_base58().unwrap().as_ref()));
+    // Return generated address to 25-byte address so we
+    // verify the algorithm's integrity
+    let binaddr2 = Blockchain::generate_binaddr_from(&address);
+    println!("Binary address #2: {}", binaddr2);
+    
+    assert_eq!(binaddr, binaddr2);
 }
 
 // TODO: Add daemon test
