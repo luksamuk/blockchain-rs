@@ -82,6 +82,7 @@ These are the resources I followed to build this (I might have skipped some of t
 - [A Blockchain in 200 Lines of Code](https://medium.com/@lhartikk/a-blockchain-in-200-lines-of-code-963cc1cc0e54)
 - [Mastering Blockchain, a Packt eBook. (It was free when I got this link!)](https://www.packtpub.com/packt/offers/free-learning)
 - [Technical background of version 1 Bitcoin addresses](https://en.bitcoin.it/wiki/Technical_background_of_version_1_Bitcoin_addresses)
+- [Ever wonder how bitcoin (and other cryptocurrencies) really work? (video)](https://www.youtube.com/watch?v=bBC-nXj3Ng4)
 
 
 ## License
